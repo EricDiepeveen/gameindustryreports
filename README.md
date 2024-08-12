@@ -46,4 +46,4 @@ This project relies on the contributions of the game industry community. We appr
 
 ## 🌟 Get Involved!
 
-If you have any questions, suggestions, or would like to contribute, feel free to [open an issue](https://github.com/your-username/GameIndustryReports/issues) or reach out directly.
+If you have any questions, suggestions, or would like to contribute, feel free to [open an issue](https://github.com/EricDiepeveen/GameIndustryReports/issues) or reach out directly.
