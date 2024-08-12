@@ -26,6 +26,12 @@ Reports should be in PDF format, preferably:
 * Standardized naming convention (e.g., `<Writer> <Title> <(YEAR)>.pdf`)
 * No DRM or proprietary restrictions
 
+## TO DO List
+------------------
+- [ ] Rename files to adhere to naming convention
+- [ ] Figure out folder structure. Suggestions are welcome
+
+
 ## Acknowledgments
 ------------------
 
