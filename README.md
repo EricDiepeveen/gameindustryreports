@@ -1,5 +1,4 @@
 # Game Industry Reports
-========================
 
 A collection of publicly available game industry reports, aggregated and maintained via Git.
 
