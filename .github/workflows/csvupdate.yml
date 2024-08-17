@@ -11,77 +11,86 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3  # Updated to use node16
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
 
       - name: Install dependencies
         run: |
           pip install pandas
 
-      - name: Update CSV file
+      - name: Create or update CSV file
+        env:
+          GITHUB_TOKEN: ${{ secrets.ACTIONS_PAT }}  # Use the PAT for committing changes
         run: |
           python - <<EOF
-          import os
-          import pandas as pd
-          from datetime import datetime
+import os
+import pandas as pd
+from datetime import datetime
+import hashlib
 
-          def extract_metadata(pdf_path):
-              # Placeholder for actual metadata extraction logic
-              return {
-                  'title': 'Sample Title',
-                  'categories': 'Sample Categories',
-                  'description': 'Sample Description',
-                  'creation_date': '2023-01-01',
-                  'report_year': '2023',
-                  'report_quarter': 'Q1',
-                  'image_url': 'http://example.com/image.png'
-              }
+# Function to generate a unique ID for each PDF
+def generate_id(file_path):
+    return hashlib.md5(file_path.encode()).hexdigest()
 
-          csv_file_path = 'csv_data.csv'
+# Function to extract metadata (placeholder implementation)
+def extract_metadata(file_path):
+    # Replace this with actual metadata extraction logic
+    return {
+        'title': os.path.basename(file_path),
+        'categories': 'Uncategorized',
+        'description': f'Report file located at {file_path}',
+        'creation_date': datetime.now().strftime('%Y-%m-%d'),
+        'upload_date': datetime.now().strftime('%Y-%m-%d'),
+        'report_year': datetime.now().year,
+        'report_quarter': (datetime.now().month - 1) // 3 + 1,
+        'image_url': '',
+    }
 
-          # Load or initialize CSV data
-          if os.path.exists(csv_file_path):
-              existing_data = pd.read_csv(csv_file_path)
-          else:
-              existing_data = pd.DataFrame(columns=[
-                  'ID', 'Title', 'Categories', 'Description', 'Creation Date', 
-                  'Upload Date', 'Report Year', 'Report Quarter', 'Image URL', 'PDF URL'
-              ])
+# Find all PDF files in the repository
+pdf_files = []
+for root, _, files in os.walk('.'):
+    for file in files:
+        if file.endswith(".pdf"):
+            pdf_files.append(os.path.join(root, file))
 
-          new_entries = []
+# Load existing CSV data
+csv_file_path = 'csv_data.csv'
+if os.path.exists(csv_file_path):
+    existing_data = pd.read_csv(csv_file_path)
+else:
+    existing_data = pd.DataFrame(columns=[
+        'ID', 'Title', 'Categories', 'Description', 'Creation Date', 'Upload Date',
+        'Report Year', 'Report Quarter', 'Image URL', 'PDF URL'
+    ])
 
-          # Iterate over each PDF file in the repository
-          for root, _, files in os.walk('.'):
-              for file in files:
-                  if file.endswith(".pdf"):
-                      pdf_file_path = os.path.join(root, file)
-                      if pdf_file_path not in existing_data['PDF URL'].values:
-                          metadata = extract_metadata(pdf_file_path)
-                          csv_data = {
-                              'ID': len(existing_data) + len(new_entries) + 1,
-                              'Title': metadata['title'],
-                              'Categories': metadata['categories'],
-                              'Description': metadata['description'],
-                              'Creation Date': metadata['creation_date'],
-                              'Upload Date': datetime.now().strftime('%Y-%m-%d'),
-                              'Report Year': metadata['report_year'],
-                              'Report Quarter': metadata['report_quarter'],
-                              'Image URL': metadata['image_url'],
-                              'PDF URL': pdf_file_path,
-                          }
-                          new_entries.append(csv_data)
+# Update the CSV data
+for pdf_file in pdf_files:
+    pdf_url = pdf_file[2:].replace('\\', '/')
+    if not existing_data[existing_data['PDF URL'] == pdf_url].empty:
+        continue
 
-          if new_entries:
-              # Append new entries to existing data
-              new_data = pd.DataFrame(new_entries)
-              updated_data = pd.concat([existing_data, new_data], ignore_index=True)
-              # Write updated CSV data
-              updated_data.to_csv(csv_file_path, index=False)
+    metadata = extract_metadata(pdf_file)
+    new_entry = {
+        'ID': generate_id(pdf_url),
+        'Title': metadata['title'],
+        'Categories': metadata['categories'],
+        'Description': metadata['description'],
+        'Creation Date': metadata['creation_date'],
+        'Upload Date': metadata['upload_date'],
+        'Report Year': metadata['report_year'],
+        'Report Quarter': metadata['report_quarter'],
+        'Image URL': metadata['image_url'],
+        'PDF URL': pdf_url,
+    }
+    existing_data = existing_data.append(new_entry, ignore_index=True)
 
-          EOF
+# Save the updated CSV data
+existing_data.to_csv(csv_file_path, index=False)
+EOF
 
-      - name: Commit and push changes
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Commit changes
         run: |
           git config --global user.name 'github-actions'
           git config --global user.email 'github-actions@github.com'
