@@ -45,7 +45,7 @@ jobs:
             const recreateImages = "${{ github.event.inputs.recreate }}" === "true";
 
             // Ensure the metadata folder exists
-            if (!fs.existsSync(metadataFolder)){
+            if (!fs.existsSync(metadataFolder)) {
                 fs.mkdirSync(metadataFolder);
             }
 
@@ -78,7 +78,8 @@ jobs:
             }, {});
 
             const allPdfFiles = fs.readdirSync('.').filter(file => file.endsWith('.pdf'));
-            
+            const generatedImages = [];  // Track generated image files
+
             allPdfFiles.forEach(pdfFile => {
                 const pdfPath = path.resolve(pdfFile);
                 const id = generateID(pdfFile);
@@ -98,11 +99,13 @@ jobs:
                     imageUrl
                 };
 
+                // Check if the image already exists
                 if (!recreateImages && fs.existsSync(imagePath)) {
-                    csvData[id] = { ...csvData[id], ...meta };
+                    csvData[id] = { ...csvData[id], ...meta };  // Update metadata
                 } else {
-                    convertPDFToImage(pdfPath, imagePath);
-                    csvData[id] = { id, ...meta };
+                    convertPDFToImage(pdfPath, imagePath);  // Convert PDF to image
+                    csvData[id] = { id, ...meta };           // Include metadata
+                    generatedImages.push(imagePath);          // Track the generated image
                 }
             });
 
@@ -119,6 +122,12 @@ jobs:
         run: |
           git config --local user.email "actions@github.com"
           git config --local user.name "GitHub Actions Bot"
-          git add metadata/*.png csv_data.csv
-          git commit -m "Generated images from PDFs and updated CSV with image URLs" || echo "No changes to commit"
-          git push "https://x-access-token:${{ secrets.ACTIONS_PAT }}@github.com/${{ github.repository }}.git"
+          
+          # Check if any images were generated before trying to commit
+          if [ -n "$(ls metadata/*.png 2>/dev/null)" ] || [ -n "$(git status --porcelain csv_data.csv)" ]; then
+            git add metadata/*.png csv_data.csv
+            git commit -m "Generated images from PDFs and updated CSV with image URLs"
+            git push "https://x-access-token:${{ secrets.ACTIONS_PAT }}@github.com/${{ github.repository }}.git"
+          else
+            echo "No new images or changes to commit."
+          fi
