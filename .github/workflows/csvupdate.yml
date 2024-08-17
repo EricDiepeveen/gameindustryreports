@@ -8,6 +8,7 @@ on:
 jobs:
   csv-update:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -16,43 +17,74 @@ jobs:
         run: |
           pip install pandas
 
-      - name: Create or update CSV file
+      - name: Update CSV file
         run: |
           python - <<EOF
           import os
           import pandas as pd
-          import glob
+          from datetime import datetime
 
-          pdf_files_path = '.'
+          def extract_metadata(pdf_path):
+              # Placeholder for actual metadata extraction logic
+              return {
+                  'title': 'Sample Title',
+                  'categories': 'Sample Categories',
+                  'description': 'Sample Description',
+                  'creation_date': '2023-01-01',
+                  'report_year': '2023',
+                  'report_quarter': 'Q1',
+                  'image_url': 'http://example.com/image.png'
+              }
 
-          pdf_files = []
-          for root, dirs, files in os.walk('.'):
+          csv_file_path = 'csv_data.csv'
+
+          # Load or initialize CSV data
+          if os.path.exists(csv_file_path):
+              existing_data = pd.read_csv(csv_file_path)
+          else:
+              existing_data = pd.DataFrame(columns=[
+                  'ID', 'Title', 'Categories', 'Description', 'Creation Date', 
+                  'Upload Date', 'Report Year', 'Report Quarter', 'Image URL', 'PDF URL'
+              ])
+
+          new_entries = []
+
+          # Iterate over each PDF file in the repository
+          for root, _, files in os.walk('.'):
               for file in files:
                   if file.endswith(".pdf"):
-                      pdf_files.append(os.path.join(root, file))
+                      pdf_file_path = os.path.join(root, file)
+                      if pdf_file_path not in existing_data['PDF URL'].values:
+                          metadata = extract_metadata(pdf_file_path)
+                          csv_data = {
+                              'ID': len(existing_data) + len(new_entries) + 1,
+                              'Title': metadata['title'],
+                              'Categories': metadata['categories'],
+                              'Description': metadata['description'],
+                              'Creation Date': metadata['creation_date'],
+                              'Upload Date': datetime.now().strftime('%Y-%m-%d'),
+                              'Report Year': metadata['report_year'],
+                              'Report Quarter': metadata['report_quarter'],
+                              'Image URL': metadata['image_url'],
+                              'PDF URL': pdf_file_path,
+                          }
+                          new_entries.append(csv_data)
 
-          csv_data = []
-
-          for pdf_file in pdf_files:
-              metadata = extract_metadata(pdf_file)
-              csv_data.append({
-                  'ID': len(csv_data) + 1,
-                  'Title': metadata['title'],
-                  'Categories': metadata['categories'],
-                  'Description': metadata['description'],
-                  'Creation Date': metadata['creation_date'],
-                  'Upload Date': metadata['upload_date'],
-                  'Report Year': metadata['report_year'],
-                  'Report Quarter': metadata['report_quarter'],
-                  'Image URL': metadata['image_url'],
-                  'PDF URL': pdf_file,
-              })
-
-          if not os.path.exists('csv_data.csv'):
-              pd.DataFrame(csv_data).to_csv('csv_data.csv', index=False)
-          else:
-              existing_data = pd.read_csv('csv_data.csv')
-              updated_data = pd.concat([existing_data, csv_data])
-              updated_data.to_csv('csv_data.csv', index=False)
+          if new_entries:
+              # Append new entries to existing data
+              new_data = pd.DataFrame(new_entries)
+              updated_data = pd.concat([existing_data, new_data], ignore_index=True)
+              # Write updated CSV data
+              updated_data.to_csv(csv_file_path, index=False)
 
           EOF
+
+      - name: Commit and push changes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config --global user.name 'github-actions'
+          git config --global user.email 'github-actions@github.com'
+          git add csv_data.csv
+          git commit -m "Update CSV file with new PDF metadata"
+          git push
