@@ -2,7 +2,7 @@ name: Generate Images from PDFs
 
 on:
   workflow_run:
-    workflows: ["Update csv_data.csv with new PDFs"]  # Name of the first workflow
+    workflows: ["Update csv_data.csv with new PDFs"]
     types:
       - completed
   workflow_dispatch:
@@ -21,9 +21,9 @@ jobs:
         uses: actions/checkout@v4  # Use the latest version for compatibility
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4  # Ensure Node.js is available
+        uses: actions/setup-node@v4
         with:
-          node-version: '20'  # Ensure it uses Node.js 20
+          node-version: '20'
 
       - name: Install dependencies
         run: |
@@ -32,7 +32,7 @@ jobs:
           pip install pdf2image
 
       - name: Generate PNG images and update CSV
-        uses: actions/github-script@v7  # Use the latest version
+        uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
@@ -45,7 +45,7 @@ jobs:
             const recreateImages = "${{ github.event.inputs.recreate }}" === "true";
 
             // Ensure the metadata folder exists
-            if (!fs.existsSync(metadataFolder)) {
+            if (!fs.existsSync(metadataFolder)){
                 fs.mkdirSync(metadataFolder);
             }
 
@@ -63,57 +63,50 @@ jobs:
                 execSync(`convert -density 150 ${pdfPath}[0] -quality 90 ${imagePath}`);
             };
 
-            const generateID = (filePath) => {
-                const crypto = require('crypto');
-                return crypto.createHash('md5').update(filePath).digest('hex');
-            };
-
-            let rows = readCSV(csvFilePath);
-            const headers = rows[0];
-            let csvData = rows.slice(1).reduce((acc, row) => {
-                let id, title, categories, description, creationDate, uploadDate, reportYear, reportQuarter, imageUrl, pdfUrl;
-                [id, title, categories, description, creationDate, uploadDate, reportYear, reportQuarter, imageUrl, pdfUrl] = row;
-                acc[id] = { id, title, categories, description, creationDate, uploadDate, reportYear, reportQuarter, imageUrl, pdfUrl };
-                return acc;
-            }, {});
-
-            const allPdfFiles = fs.readdirSync('.').filter(file => file.endsWith('.pdf'));
-            const generatedImages = [];  // Track generated image files
-
-            allPdfFiles.forEach(pdfFile => {
-                const pdfPath = path.resolve(pdfFile);
-                const id = generateID(pdfFile);
-                const imageName = `${id}.png`;
-                const imagePath = path.resolve(metadataFolder, imageName);
-                const imageUrl = `${baseUrl}${metadataFolder}/${imageName}`;
-
-                const meta = {
-                    title: path.basename(pdfFile),
-                    categories: csvData[id]?.categories || 'Uncategorized',
-                    description: `Report file located at ${pdfFile}`,
-                    creationDate: new Date().toISOString().split('T')[0],
-                    uploadDate: new Date().toISOString().split('T')[0],
-                    reportYear: new Date().getFullYear(),
-                    reportQuarter: Math.floor((new Date().getMonth() + 3) / 3),
-                    pdfUrl: `${baseUrl}${pdfFile}`,
-                    imageUrl
+            const rows = readCSV(csvFilePath);
+            const headers = rows[0];  // Store the header row for later use
+            const csvData = rows.slice(1).map(row => {
+                return {
+                    id: row[0],
+                    title: row[1],
+                    categories: row[2],
+                    description: row[3],
+                    creationDate: row[4],
+                    uploadDate: row[5],
+                    reportYear: row[6],
+                    reportQuarter: row[7],
+                    imageUrl: row[8],
+                    pdfUrl: row[9]
                 };
+            });
+
+            // Process each row to generate images
+            let generatedImages = [];  // Track generated image files
+
+            csvData.forEach(entry => {
+                const { id, pdfUrl } = entry;
+
+                // Construct paths
+                const pdfPath = pdfUrl.replace(baseUrl, '');
+                const imagePath = path.resolve(metadataFolder, `${id}.png`);
+                const imageURL = `${baseUrl}${metadataFolder}/${id}.png`;
 
                 // Check if the image already exists
                 if (!recreateImages && fs.existsSync(imagePath)) {
-                    csvData[id] = { ...csvData[id], ...meta };  // Update metadata
+                    entry.imageUrl = imageURL;  // Update image URL if image already exists
                 } else {
                     convertPDFToImage(pdfPath, imagePath);  // Convert PDF to image
-                    csvData[id] = { id, ...meta };           // Include metadata
-                    generatedImages.push(imagePath);          // Track the generated image
+                    entry.imageUrl = imageURL;  // Update image URL after converting
+                    generatedImages.push(imagePath);  // Track the generated image
                 }
             });
 
-            const newRows = [headers].concat(Object.values(csvData).map(entry => [
-                entry.id, entry.title, entry.categories, entry.description, entry.creationDate, entry.uploadDate, 
-                entry.reportYear, entry.reportQuarter, entry.imageUrl, entry.pdfUrl
+            // Write the updated rows back to the CSV file, including the new image URLs
+            const newRows = [headers].concat(csvData.map(entry => [
+                entry.id, entry.title, entry.categories, entry.description, entry.creationDate,
+                entry.uploadDate, entry.reportYear, entry.reportQuarter, entry.imageUrl, entry.pdfUrl
             ]));
-            
+
             writeCSV(csvFilePath, newRows);
 
       - name: Commit images and updated CSV
@@ -124,7 +117,7 @@ jobs:
           git config --local user.name "GitHub Actions Bot"
           
           # Check if any images were generated before trying to commit
-          if [ -n "$(ls metadata/*.png 2>/dev/null)" ] || [ -n "$(git status --porcelain csv_data.csv)" ]; then
+          if [ "$(ls -A metadata/*.png 2>/dev/null)" ] || [ -n "$(git status --porcelain csv_data.csv)" ]; then
             git add metadata/*.png csv_data.csv
             git commit -m "Generated images from PDFs and updated CSV with image URLs"
             git push "https://x-access-token:${{ secrets.ACTIONS_PAT }}@github.com/${{ github.repository }}.git"
