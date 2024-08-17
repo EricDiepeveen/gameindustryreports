@@ -33,10 +33,11 @@ jobs:
 
             function cleanString(str) {
               return str
-                .replace(/,/g, '')                     // Remove all commas
-                .replace(/[-_]/g, ' ')                 // Replace hyphens and underscores with spaces
-                .trim();                               // Trim whitespace
-            }
+                  .replace(/,/g, '')                           // Remove all commas
+                  .replace(/(?<!\s)-(?=\s)|(?<=\s)-(?=\S)|(?<=\S)-(?=\s)/g, ' ') // Replace hyphens connecting words with a space
+                  .replace(/_/g, ' ')                           // Replace underscores with spaces
+                  .trim();                                      // Trim whitespace from the start and end
+              }
 
             function extract_metadata(file_path) {
               const baseName = path.basename(file_path);
