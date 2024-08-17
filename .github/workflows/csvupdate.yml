@@ -91,9 +91,11 @@ existing_data.to_csv(csv_file_path, index=False)
 EOF
 
       - name: Commit changes
+        env:
+          GITHUB_TOKEN: ${{ secrets.ACTIONS_PAT }}  # Use the PAT for committing changes
         run: |
           git config --global user.name 'github-actions'
           git config --global user.email 'github-actions@github.com'
           git add csv_data.csv
-          git commit -m "Update CSV file with new PDF metadata"
+          git commit -m "Update CSV file with new PDF metadata" || echo "No changes to commit"
           git push
