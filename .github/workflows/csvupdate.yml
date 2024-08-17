@@ -77,14 +77,18 @@ jobs:
             if (fs.existsSync(csvFilePath)) {
               csvData = fs.readFileSync(csvFilePath, 'utf-8').split('\n');
               
-              // Remove the header row if it exists
+              // Remove the header row if it exists and any empty lines
               if (csvData[0] === csvHeader.trim()) {
                 csvData.shift();
               }
-              
+              // Process each line from CSV
               csvData.forEach(line => {
-                const [id, title, categories, description, creationDate, uploadDate, reportYear, reportQuarter, imageUrl, pdfUrl] = line.split(',');
-                existingEntries[id] = { id, title, categories, description, creationDate, uploadDate, reportYear, reportQuarter, imageUrl, pdfUrl };
+                // Split by comma and check for adequate fields
+                const fields = line.split(',').map(field => field.trim());
+                if (fields.length === 10 && fields[0]) { // Ensure there's an ID present
+                  const [id, title, categories, description, creationDate, uploadDate, reportYear, reportQuarter, imageUrl, pdfUrl] = fields;
+                  existingEntries[id] = { id, title, categories, description, creationDate, uploadDate, reportYear, reportQuarter, imageUrl, pdfUrl };
+                }
               });
             } else {
               csvData = [csvHeader.trim()];  // Add header if CSV doesn't exist
