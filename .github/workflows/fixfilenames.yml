@@ -21,13 +21,13 @@ jobs:
             const fs = require('fs');
             const path = require('path');
 
-            // Define a function to fix file names
-            function fixFileName(fileName) {
-              return fileName
-                .replace(/[\u2018\u2019\uFF0C]/g, ',') // Replacing bad commas
-                .replace(/(?<!\s)-(?=\s)|(?<=\s)-(?=\S)|(?<=\S)-(?=\s)/g, ' ') // Replace hyphens connecting words with a space
-                .replace(/_/g, ' ') // Replace underscores with spaces
-                .trim(); // Trim whitespace from the start and end
+            // Define a function to clean string and fix file names
+            function cleanString(str) {
+              return str
+                  .replace(/,/g, '')                           // Remove all commas
+                  .replace(/(?<!\s)-(?=\s)|(?<=\s)-(?=\S)|(?<=\S)-(?=\s)/g, ' ') // Replace hyphens connecting words with a space
+                  .replace(/_/g, ' ')                           // Replace underscores with spaces
+                  .trim();                                      // Trim whitespace from the start and end
             }
 
             // Traverse the directory and rename files
@@ -38,7 +38,7 @@ jobs:
               for (const file of files) {
                 if (file.endsWith('.pdf')) {
                   const oldPath = path.join(directoryPath, file);
-                  const newFileName = fixFileName(file);
+                  const newFileName = cleanString(file);  // Apply cleaning
                   const newPath = path.join(directoryPath, newFileName);
           
                   // Rename the file if the name has changed
