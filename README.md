@@ -1,3 +1,4 @@
+[![Update CSV File](https://github.com/EricDiepeveen/gameindustryreports/actions/workflows/csvupdate.yml/badge.svg)](https://github.com/EricDiepeveen/gameindustryreports/actions/workflows/csvupdate.yml)
 # 🎮 Game Industry Reports 📚
 
 A comprehensive collection of publicly available game industry reports, aggregated and maintained via Git.
