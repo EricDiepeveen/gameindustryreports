@@ -1,4 +1,4 @@
-name: Update csv_data.csv with new PDFs
+name: Update CSV when new PDF is uploaded
 
 on:
   push:
