@@ -26,11 +26,11 @@ jobs:
             const fs = require('fs');
             const path = require('path');
             const crypto = require('crypto');
-
+            
             function generate_id(file_path) {
               return crypto.createHash('md5').update(file_path).digest('hex');
             }
-
+            
             function extract_metadata(file_path) {
               const baseName = path.basename(file_path);
               const currentDate = new Date().toISOString().split('T')[0];
@@ -68,26 +68,59 @@ jobs:
             };
 
             const allPdfFiles = walkSync('.', pdfFiles);
+            const baseUrl = 'https://raw.githubusercontent.com/${{ github.repository }}/main/';
+            const csvHeader = 'ID,Title,Categories,Description,Creation Date,Upload Date,Report Year,Report Quarter,Image URL,PDF URL\n';
 
-            // Prepare CSV data
-            let csvData = 'ID,Title,Categories,Description,Creation Date,Upload Date,Report Year,Report Quarter,Image URL,PDF URL\n';
+            let csvData;
+            let existingEntries = {};
+
             if (fs.existsSync(csvFilePath)) {
-              csvData = fs.readFileSync(csvFilePath, 'utf-8');
+              csvData = fs.readFileSync(csvFilePath, 'utf-8').split('\n');
+              
+              // Remove the header row if it exists
+              if (csvData[0] === csvHeader.trim()) {
+                csvData.shift();
+              }
+              
+              csvData.forEach(line => {
+                const [id, title, categories, description, creationDate, uploadDate, reportYear, reportQuarter, imageUrl, pdfUrl] = line.split(',');
+                existingEntries[id] = { id, title, categories, description, creationDate, uploadDate, reportYear, reportQuarter, imageUrl, pdfUrl };
+              });
+            } else {
+              csvData = [csvHeader.trim()];  // Add header if CSV doesn't exist
             }
-
-            const existingLines = csvData.split('\n').filter(line => line);
-            const existingUrls = new Set(existingLines.map(line => line.split(',').pop().trim()));
 
             allPdfFiles.forEach(pdfFile => {
               const metadata = extract_metadata(pdfFile);
-              const pdfUrl = metadata.pdf_url;
+              const pdfUrl = baseUrl + pdfFile;
+              const id = generate_id(pdfFile);
 
-              if (!existingUrls.has(pdfUrl)) {
-                const newLine = `${generate_id(pdfUrl)},${metadata.title},${metadata.categories},${metadata.description},${metadata.creation_date},${metadata.upload_date},${metadata.report_year},${metadata.report_quarter},${metadata.image_url},${pdfUrl}`;
-                csvData += `${newLine}\n`;
+              if (existingEntries[id]) {
+                // Update the URL in the existing entry
+                existingEntries[id].pdf_url = pdfUrl;
+              } else {
+                // Add new entry
+                existingEntries[id] = {
+                  id,
+                  title: metadata.title,
+                  categories: metadata.categories,
+                  description: metadata.description,
+                  creation_date: metadata.creation_date,
+                  upload_date: metadata.upload_date,
+                  report_year: metadata.report_year,
+                  report_quarter: metadata.report_quarter,
+                  image_url: metadata.image_url,
+                  pdf_url: pdfUrl,
+                };
               }
             });
 
+            // Convert the entries back to CSV format
+            csvData = csvHeader.trim() + '\n' + Object.values(existingEntries).map(entry => {
+              return `${entry.id},${entry.title},${entry.categories},${entry.description},${entry.creation_date},${entry.upload_date},${entry.report_year},${entry.report_quarter},${entry.image_url},${entry.pdf_url}`;
+            }).join('\n') + '\n';
+
+            // Write the CSV data back to the file
             fs.writeFileSync(csvFilePath, csvData);
 
       - name: Commit changes
