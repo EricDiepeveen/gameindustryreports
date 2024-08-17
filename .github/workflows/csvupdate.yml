@@ -31,6 +31,13 @@ jobs:
               return crypto.createHash('md5').update(file_path).digest('hex');
             }
 
+            function cleanString(str) {
+              return str
+                .replace(/,/g, '')                     // Remove all commas
+                .replace(/[-_]/g, ' ')                 // Replace hyphens and underscores with spaces
+                .trim();                               // Trim whitespace
+            }
+
             function extract_metadata(file_path) {
               const baseName = path.basename(file_path);
               const currentDate = new Date().toISOString().split('T')[0];
@@ -39,9 +46,9 @@ jobs:
               const currentQuarter = Math.floor(currentMonth / 3) + 1;
 
               return {
-                title: baseName,
+                title: cleanString(baseName),
                 categories: 'Uncategorized',
-                description: `Report file located at ${file_path}`,
+                description: `Report file located at ${cleanString(file_path)}`,
                 creation_date: currentDate,
                 upload_date: currentDate,
                 report_year: currentYear,
@@ -85,9 +92,8 @@ jobs:
               csvData.forEach(line => {
                 const fields = line.split(',').map(field => field.trim()).filter(field => field !== "");
                 
-                // Ensure the length of the fields array is exactly 10
                 if (fields.length === 10) {
-                  const [id, title, categories, description, creationDate, uploadDate, reportYear, reportQuarter, imageUrl, pdfUrl] = fields;
+                  const [id, title, categories, description, creationDate, uploadDate, reportYear, reportQuarter, imageUrl, pdfUrl] = fields.map(cleanString);
                   existingEntries[id] = { id, title, categories, description, creationDate, uploadDate, reportYear, reportQuarter, imageUrl, pdfUrl };
                 } else {
                   console.warn(`Skipping malformed row: ${line}`);
