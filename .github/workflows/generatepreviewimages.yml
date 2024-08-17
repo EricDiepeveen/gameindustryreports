@@ -7,7 +7,7 @@ on:
       - completed
   workflow_dispatch:
     inputs:
-      recreate:  # Boolean option to control the recreation of images
+      recreate:
         description: 'Recreate all images'
         required: false
         default: 'false'
@@ -20,72 +20,97 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4  # Use the latest version for compatibility
 
-      - name: Set up Python
-        uses: actions/setup-python@v4  # Ensure Python is available
+      - name: Setup Node.js
+        uses: actions/setup-node@v4  # Ensure Node.js is available
         with:
-          python-version: '3.x'
+          node-version: '20'  # Ensure it uses Node.js 20
 
       - name: Install dependencies
         run: |
-          sudo apt-get update && sudo apt-get install -y poppler-utils  # Install poppler-utils for pdf2image
+          sudo apt-get update && sudo apt-get install -y poppler-utils  # For pdf2image dependencies
           python -m pip install --upgrade pip
           pip install pdf2image
 
       - name: Generate PNG images and update CSV
-        run: |
-          python - <<EOF
-import os
-import csv
-from pdf2image import convert_from_path
+        uses: actions/github-script@v7  # Use the latest version
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const { execSync } = require('child_process');
 
-# Paths and URLs
-csv_file_path = 'csv_data.csv'
-metadata_folder = 'metadata'
-base_url = 'https://raw.githubusercontent.com/${{ github.repository }}/main/'
-recreate_images = "${{ github.event.inputs.recreate }}" == "true"
+            const baseUrl = 'https://raw.githubusercontent.com/${{ github.repository }}/main/';
+            const csvFilePath = 'csv_data.csv';
+            const metadataFolder = 'metadata';
+            const recreateImages = "${{ github.event.inputs.recreate }}" === "true";
 
-# Ensure the metadata folder exists
-os.makedirs(metadata_folder, exist_ok=True)
+            if (!fs.existsSync(metadataFolder)){
+                fs.mkdirSync(metadataFolder);
+            }
 
-# Read and update the CSV file
-rows = []
-with open(csv_file_path, mode='r', newline='', encoding='utf-8') as csvfile:
-    reader = csv.DictReader(csvfile)
-    for row in reader:
-        pdf_url = row['PDF URL']
-        pdf_id = row['ID']
-        pdf_path = pdf_url.replace(base_url, '')
+            const readCSV = (filePath) => {
+                const data = fs.readFileSync(filePath, 'utf-8');
+                return data.split('\n').map(row => row.split(',')).filter(row => row.length > 1);
+            };
 
-        # Determine the image path
-        image_name = f'{pdf_id}.png'
-        image_path = os.path.join(metadata_folder, image_name)
-        
-        # Determine the image URL
-        image_url = f'{base_url}{metadata_folder}/{image_name}'
+            const writeCSV = (filePath, rows) => {
+                const csvContent = rows.map(e => e.join(",")).join("\n");
+                fs.writeFileSync(filePath, csvContent, 'utf-8');
+            };
 
-        # Update the image URL in the CSV row
-        row['Image URL'] = image_url
+            const convertPDFToImage = (pdfPath, imagePath) => {
+                execSync(`convert -density 150 ${pdfPath}[0] -quality 90 ${imagePath}`);
+            };
 
-        # Skip existing images unless we are recreating all images
-        if not recreate_images and os.path.exists(image_path):
-            rows.append(row)
-            continue
+            const generateID = (filePath) => {
+                const crypto = require('crypto');
+                return crypto.createHash('md5').update(filePath).digest('hex');
+            };
 
-        # Convert the first page of the PDF to an image
-        images = convert_from_path(pdf_path, first_page=1, last_page=1)
+            let rows = readCSV(csvFilePath);
+            const headers = rows[0];
+            let csvData = rows.slice(1).reduce((acc, row) => {
+                let id, title, categories, description, creationDate, uploadDate, reportYear, reportQuarter, imageUrl, pdfUrl;
+                [id, title, categories, description, creationDate, uploadDate, reportYear, reportQuarter, imageUrl, pdfUrl] = row;
+                acc[id] = { id, title, categories, description, creationDate, uploadDate, reportYear, reportQuarter, imageUrl, pdfUrl };
+                return acc;
+            }, {});
 
-        # Save the image with the ID name
-        images[0].save(image_path, 'PNG')
-        
-        rows.append(row)
+            const allPdfFiles = fs.readdirSync('.').filter(file => file.endsWith('.pdf'));
+            
+            allPdfFiles.forEach(pdfFile => {
+                const pdfPath = path.resolve(pdfFile);
+                const id = generateID(pdfFile);
+                const imageName = `${id}.png`;
+                const imagePath = path.resolve(metadataFolder, imageName);
+                const imageUrl = `${baseUrl}${metadataFolder}/${imageName}`;
 
-# Write the updated rows back to the CSV file
-csv_header = reader.fieldnames
-with open(csv_file_path, mode='w', newline='', encoding='utf-8') as csvfile:
-    writer = csv.DictWriter(csvfile, fieldnames=csv_header)
-    writer.writeheader()
-    writer.writerows(rows)
-EOF
+                const meta = {
+                    title: path.basename(pdfFile),
+                    categories: csvData[id]?.categories || 'Uncategorized',
+                    description: `Report file located at ${pdfFile}`,
+                    creationDate: new Date().toISOString().split('T')[0],
+                    uploadDate: new Date().toISOString().split('T')[0],
+                    reportYear: new Date().getFullYear(),
+                    reportQuarter: Math.floor((new Date().getMonth() + 3) / 3),
+                    pdfUrl: `${baseUrl}${pdfFile}`,
+                    imageUrl
+                };
+
+                if (!recreateImages && fs.existsSync(imagePath)) {
+                    csvData[id] = { ...csvData[id], ...meta };
+                } else {
+                    convertPDFToImage(pdfPath, imagePath);
+                    csvData[id] = { id, ...meta };
+                }
+            });
+
+            const newRows = [headers].concat(Object.values(csvData).map(entry => [
+                entry.id, entry.title, entry.categories, entry.description, entry.creationDate, entry.uploadDate, 
+                entry.reportYear, entry.reportQuarter, entry.imageUrl, entry.pdfUrl
+            ]));
+            
+            writeCSV(csvFilePath, newRows);
 
       - name: Commit images and updated CSV
         env:
