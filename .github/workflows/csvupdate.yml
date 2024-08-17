@@ -12,15 +12,15 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3  # Use the latest version
+        uses: actions/checkout@v4  # Updated to the latest version to ensure compatibility with Node.js 20
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4  # Use the latest version
+        uses: actions/setup-node@v4  # Updated to the latest version
         with:
-          node-version: '16'
-      
+          node-version: '20'  # Ensure it uses Node.js 20
+
       - name: Update CSV data
-        uses: actions/github-script@v6
+        uses: actions/github-script@v7  # Updated to the latest version
         with:
           script: |
             const fs = require('fs');
@@ -51,7 +51,7 @@ jobs:
               };
             }
 
-            const csvFilePath = 'data/stats.csv';
+            const csvFilePath = 'csv_data.csv';
             const pdfFiles = [];
 
             // Collect PDF files from the repository, including subfolders
@@ -92,10 +92,10 @@ jobs:
 
       - name: Commit changes
         env:
-          GITHUB_TOKEN: ${{ secrets.ACTIONS_PAT }}  # Use the PAT for committing changes
+          GITHUB_TOKEN: ${{ secrets.ACTIONS_PAT }}  # Use ACTIONS_PAT for committing changes
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add data/stats.csv
-          git commit -m "data/stats.csv updated with new PDF metadata" || echo "No changes to commit"
+          git add csv_data.csv
+          git commit -m "csv_data.csv updated with new PDF metadata" || echo "No changes to commit"
           git push
