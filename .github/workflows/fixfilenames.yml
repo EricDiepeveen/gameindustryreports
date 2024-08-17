@@ -1,0 +1,64 @@
+name: Fix File Names for Proper Unicode Usage and Commit Changes
+
+on:
+  push:
+    paths:
+      - '**/*.pdf'  # Trigger whenever a PDF file is added or modified
+  workflow_dispatch:  # Allows the workflow to be triggered manually
+
+jobs:
+  fixFileNames:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4  # Use the latest version for compatibility
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4  # Ensure Node.js is available
+        with:
+          node-version: '20'  # Use Node.js version 20
+
+      - name: Fix file names for proper unicode usage
+        run: |
+          const fs = require('fs');
+          const path = require('path');
+
+          // Define a function to fix file names
+          function fixFileName(fileName) {
+            return fileName
+              .replace(/[\u2018\u2019\uFF0C]/g, ',') // Replacing bad commas
+              .replace(/(?<!\s)-(?=\s)|(?<=\s)-(?=\S)|(?<=\S)-(?=\s)/g, ' ') // Replace hyphens connecting words with a space
+              .replace(/_/g, ' ') // Replace underscores with spaces
+              .trim(); // Trim whitespace from the start and end
+          }
+
+          // Traverse the directory and rename files
+          (async () => {
+            const directoryPath = '.'; // Base directory to check
+            const files = fs.readdirSync(directoryPath);
+
+            for (const file of files) {
+              if (file.endsWith('.pdf')) {
+                const oldPath = path.join(directoryPath, file);
+                const newFileName = fixFileName(file);
+                const newPath = path.join(directoryPath, newFileName);
+
+                // Rename the file if the name has changed
+                if (oldPath !== newPath) {
+                  fs.renameSync(oldPath, newPath);
+                  console.log(`Renamed: ${oldPath} -> ${newPath}`);
+                }
+              }
+            }
+          })();
+
+      - name: Commit changes
+        env:
+          ACTIONS_PAT: ${{ secrets.ACTIONS_PAT }}  # Use ACTIONS_PAT for committing changes
+        run: |
+          git config --local user.email "actions@github.com"
+          git config --local user.name "GitHub Actions Bot"
+          git add '*.pdf'  # Change here if necessary to match the modified files
+          git commit -m "Fixed file names for proper unicode usage" || echo "No changes to commit"
+          git push "https://x-access-token:${{ secrets.ACTIONS_PAT }}@github.com/${{ github.repository }}.git"
