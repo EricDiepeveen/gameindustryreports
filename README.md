@@ -1,4 +1,4 @@
-[![Update CSV File](https://github.com/EricDiepeveen/gameindustryreports/actions/workflows/csvupdate.yml/badge.svg)](https://github.com/EricDiepeveen/gameindustryreports/actions/workflows/csvupdate.yml)
+[![Update CSV File](https://github.com/EricDiepeveen/gameindustryreports/actions/workflows/csvupdate.yml/badge.svg)](https://github.com/EricDiepeveen/gameindustryreports/actions/workflows/csvupdate.yml) [![Generate Images from PDFs](https://github.com/EricDiepeveen/gameindustryreports/actions/workflows/generatepreviewimages.yml/badge.svg)](https://github.com/EricDiepeveen/gameindustryreports/actions/workflows/generatepreviewimages.yml)
 # 🎮 Game Industry Reports 📚
 
 A comprehensive collection of publicly available game industry reports, aggregated and maintained via Git.
