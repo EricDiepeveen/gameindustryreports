@@ -12,89 +12,90 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3  # Use the latest version
 
       - name: Setup Node.js
-        uses: actions/setup-node@v2
+        uses: actions/setup-node@v4  # Use the latest version
         with:
           node-version: '16'
-          
+      
       - name: Update CSV data
-        id: update_csv
-        run: |
-          const fs = require('fs');
-          const path = require('path');
-          const crypto = require('crypto');
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const crypto = require('crypto');
 
-          function generate_id(file_path) {
-            return crypto.createHash('md5').update(file_path).digest('hex');
-          }
-
-          function extract_metadata(file_path) {
-            const baseName = path.basename(file_path);
-            const currentDate = new Date().toISOString().split('T')[0];
-            const currentYear = new Date().getFullYear();
-            const currentMonth = new Date().getMonth();
-            const currentQuarter = Math.floor(currentMonth / 3) + 1;
-
-            return {
-              title: baseName,
-              categories: 'Uncategorized',
-              description: `Report file located at ${file_path}`,
-              creation_date: currentDate,
-              upload_date: currentDate,
-              report_year: currentYear,
-              report_quarter: currentQuarter,
-              image_url: '',
-              pdf_url: file_path,
+            function generate_id(file_path) {
+              return crypto.createHash('md5').update(file_path).digest('hex');
             }
-          }
 
-          const csvFilePath = 'data/stats.csv';
-          const pdfFiles = [];
+            function extract_metadata(file_path) {
+              const baseName = path.basename(file_path);
+              const currentDate = new Date().toISOString().split('T')[0];
+              const currentYear = new Date().getFullYear();
+              const currentMonth = new Date().getMonth();
+              const currentQuarter = Math.floor(currentMonth / 3) + 1;
 
-          // Collect PDF files from the repository, including subfolders
-          const walkSync = (dir, fileList) => {
-            const files = fs.readdirSync(dir);
-            files.forEach(file => {
-              if (fs.statSync(path.join(dir, file)).isDirectory()) {
-                fileList = walkSync(path.join(dir, file), fileList);
-              } else if (file.endsWith('.pdf')) {
-                fileList.push(path.join(dir, file));
+              return {
+                title: baseName,
+                categories: 'Uncategorized',
+                description: `Report file located at ${file_path}`,
+                creation_date: currentDate,
+                upload_date: currentDate,
+                report_year: currentYear,
+                report_quarter: currentQuarter,
+                image_url: '',
+                pdf_url: file_path,
+              };
+            }
+
+            const csvFilePath = 'data/stats.csv';
+            const pdfFiles = [];
+
+            // Collect PDF files from the repository, including subfolders
+            const walkSync = (dir, fileList) => {
+              const files = fs.readdirSync(dir);
+              files.forEach(file => {
+                if (fs.statSync(path.join(dir, file)).isDirectory()) {
+                  fileList = walkSync(path.join(dir, file), fileList);
+                } else if (file.endsWith('.pdf')) {
+                  fileList.push(path.join(dir, file));
+                }
+              });
+              return fileList;
+            };
+
+            const allPdfFiles = walkSync('.', pdfFiles);
+
+            // Prepare CSV data
+            let csvData = 'ID,Title,Categories,Description,Creation Date,Upload Date,Report Year,Report Quarter,Image URL,PDF URL\n';
+            if (fs.existsSync(csvFilePath)) {
+              csvData = fs.readFileSync(csvFilePath, 'utf-8');
+            }
+
+            const existingLines = csvData.split('\n').filter(line => line);
+            const existingUrls = new Set(existingLines.map(line => line.split(',').pop().trim()));
+
+            allPdfFiles.forEach(pdfFile => {
+              const metadata = extract_metadata(pdfFile);
+              const pdfUrl = metadata.pdf_url;
+
+              if (!existingUrls.has(pdfUrl)) {
+                const newLine = `${generate_id(pdfUrl)},${metadata.title},${metadata.categories},${metadata.description},${metadata.creation_date},${metadata.upload_date},${metadata.report_year},${metadata.report_quarter},${metadata.image_url},${pdfUrl}`;
+                csvData += `${newLine}\n`;
               }
             });
-            return fileList;
-          };
 
-          const allPdfFiles = walkSync('.', pdfFiles);
+            fs.writeFileSync(csvFilePath, csvData);
 
-          // Prepare CSV data
-          let csvData = 'ID,Title,Categories,Description,Creation Date,Upload Date,Report Year,Report Quarter,Image URL,PDF URL\n';
-          if (fs.existsSync(csvFilePath)) {
-            csvData = fs.readFileSync(csvFilePath, 'utf-8');
-          }
-
-          const existingLines = csvData.split('\n').filter(line => line);
-          const existingUrls = new Set(existingLines.map(line => line.split(',').pop().trim()));
-
-          allPdfFiles.forEach(pdfFile => {
-            const metadata = extract_metadata(pdfFile);
-            const pdfUrl = metadata.pdf_url;
-
-            if (!existingUrls.has(pdfUrl)) {
-              const newLine = `${generate_id(pdfUrl)},${metadata.title},${metadata.categories},${metadata.description},${metadata.creation_date},${metadata.upload_date},${metadata.report_year},${metadata.report_quarter},${metadata.image_url},${pdfUrl}`;
-              csvData += `${newLine}\n`;
-            }
-          });
-
-          fs.writeFileSync(csvFilePath, csvData);
-          
       - name: Commit changes
+        env:
+          GITHUB_TOKEN: ${{ secrets.ACTIONS_PAT }}  # Use the PAT for committing changes
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add data/stats.csv
           git commit -m "data/stats.csv updated with new PDF metadata" || echo "No changes to commit"
           git push
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
