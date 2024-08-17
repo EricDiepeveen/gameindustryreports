@@ -1,4 +1,4 @@
-name: Generate Preview Images
+name: Generate Images from PDFs
 
 on:
   workflow_run:
@@ -93,7 +93,6 @@ EOF
         run: |
           git config --local user.email "actions@github.com"
           git config --local user.name "GitHub Actions Bot"
-          git add metadata/*.png
-          git add csv_data.csv
+          git add metadata/*.png csv_data.csv
           git commit -m "Generated images from PDFs and updated CSV with image URLs"
           git push "https://x-access-token:${{ secrets.ACTIONS_PAT }}@github.com/${{ github.repository }}.git"
