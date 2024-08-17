@@ -1,4 +1,4 @@
-name: Update CSV File
+name: Update csv_data.csv with new PDFs
 
 on:
   push:
@@ -6,97 +6,94 @@ on:
       - '**/*.pdf'  # Trigger only when a PDF file is added or modified
 
 jobs:
-  csv-update:
+  updateCSV:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout main branch
-        uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v2
 
-      - name: Set up Python
-        uses: actions/setup-python@v2
-
-      - name: Install dependencies
+      - name: Setup Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: '16'
+          
+      - name: Update CSV data
+        id: update_csv
         run: |
-          pip install pandas
+          const fs = require('fs');
+          const path = require('path');
+          const crypto = require('crypto');
 
-      - name: Update CSV file
-        env:
-          GITHUB_TOKEN: ${{ secrets.ACTIONS_PAT }}  # Ensure you have set this secret in your repository
-        run: |
-          python - <<EOF
-import os
-import pandas as pd
-from datetime import datetime
-import hashlib
+          function generate_id(file_path) {
+            return crypto.createHash('md5').update(file_path).digest('hex');
+          }
 
-# Function to generate a unique ID for each PDF
-def generate_id(file_path):
-    return hashlib.md5(file_path.encode()).hexdigest()
+          function extract_metadata(file_path) {
+            const baseName = path.basename(file_path);
+            const currentDate = new Date().toISOString().split('T')[0];
+            const currentYear = new Date().getFullYear();
+            const currentMonth = new Date().getMonth();
+            const currentQuarter = Math.floor(currentMonth / 3) + 1;
 
-# Function to extract metadata (placeholder implementation)
-def extract_metadata(file_path):
-    # Replace this with actual metadata extraction logic
-    return {
-        'title': os.path.basename(file_path),
-        'categories': 'Uncategorized',
-        'description': f'Report file located at {file_path}',
-        'creation_date': datetime.now().strftime('%Y-%m-%d'),
-        'upload_date': datetime.now().strftime('%Y-%m-%d'),
-        'report_year': datetime.now().year,
-        'report_quarter': (datetime.now().month - 1) // 3 + 1,
-        'image_url': '',
-    }
+            return {
+              title: baseName,
+              categories: 'Uncategorized',
+              description: `Report file located at ${file_path}`,
+              creation_date: currentDate,
+              upload_date: currentDate,
+              report_year: currentYear,
+              report_quarter: currentQuarter,
+              image_url: '',
+              pdf_url: file_path,
+            }
+          }
 
-# Find all PDF files in the repository
-pdf_files = []
-for root, _, files in os.walk('.'):
-    for file in files:
-        if file.endswith(".pdf"):
-            pdf_files.append(os.path.join(root, file))
+          const csvFilePath = 'data/stats.csv';
+          const pdfFiles = [];
 
+          // Collect PDF files from the repository, including subfolders
+          const walkSync = (dir, fileList) => {
+            const files = fs.readdirSync(dir);
+            files.forEach(file => {
+              if (fs.statSync(path.join(dir, file)).isDirectory()) {
+                fileList = walkSync(path.join(dir, file), fileList);
+              } else if (file.endsWith('.pdf')) {
+                fileList.push(path.join(dir, file));
+              }
+            });
+            return fileList;
+          };
 
-# Load existing CSV data
-csv_file_path = 'data/stats.csv'
-if os.path.exists(csv_file_path):
-    existing_data = pd.read_csv(csv_file_path)
-else:
-    existing_data = pd.DataFrame(columns=[
-        'ID', 'Title', 'Categories', 'Description', 'Creation Date', 'Upload Date',
-        'Report Year', 'Report Quarter', 'Image URL', 'PDF URL'
-    ])
+          const allPdfFiles = walkSync('.', pdfFiles);
 
-# Update the CSV data
-for pdf_file in pdf_files:
-    pdf_url = pdf_file[2:].replace('\\', '/')
-    if not existing_data[existing_data['PDF URL'] == pdf_url].empty:
-        continue
+          // Prepare CSV data
+          let csvData = 'ID,Title,Categories,Description,Creation Date,Upload Date,Report Year,Report Quarter,Image URL,PDF URL\n';
+          if (fs.existsSync(csvFilePath)) {
+            csvData = fs.readFileSync(csvFilePath, 'utf-8');
+          }
 
-    metadata = extract_metadata(pdf_file)
-    new_entry = {
-        'ID': generate_id(pdf_url),
-        'Title': metadata['title'],
-        'Categories': metadata['categories'],
-        'Description': metadata['description'],
-        'Creation Date': metadata['creation_date'],
-        'Upload Date': metadata['upload_date'],
-        'Report Year': metadata['report_year'],
-        'Report Quarter': metadata['report_quarter'],
-        'Image URL': metadata['image_url'],
-        'PDF URL': pdf_url,
-    }
-    existing_data = existing_data.append(new_entry, ignore_index=True)
+          const existingLines = csvData.split('\n').filter(line => line);
+          const existingUrls = new Set(existingLines.map(line => line.split(',').pop().trim()));
 
-# Save the updated CSV data
-existing_data.to_csv(csv_file_path, index=False)
-EOF
+          allPdfFiles.forEach(pdfFile => {
+            const metadata = extract_metadata(pdfFile);
+            const pdfUrl = metadata.pdf_url;
 
+            if (!existingUrls.has(pdfUrl)) {
+              const newLine = `${generate_id(pdfUrl)},${metadata.title},${metadata.categories},${metadata.description},${metadata.creation_date},${metadata.upload_date},${metadata.report_year},${metadata.report_quarter},${metadata.image_url},${pdfUrl}`;
+              csvData += `${newLine}\n`;
+            }
+          });
+
+          fs.writeFileSync(csvFilePath, csvData);
+          
       - name: Commit changes
-        env:
-          GITHUB_TOKEN: ${{ secrets.ACTIONS_PAT }}  # Use the PAT for committing changes
         run: |
-          git config --global user.name 'github-actions'
-          git config --global user.email 'github-actions@github.com'
-          git add csv_data.csv
-          git commit -m "Update CSV file with new PDF metadata" || echo "No changes to commit"
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add data/stats.csv
+          git commit -m "data/stats.csv updated with new PDF metadata" || echo "No changes to commit"
           git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
