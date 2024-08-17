@@ -92,10 +92,10 @@ jobs:
 
       - name: Commit changes
         env:
-          GITHUB_TOKEN: ${{ secrets.ACTIONS_PAT }}  # Use ACTIONS_PAT for committing changes
+          ACTIONS_PAT: ${{ secrets.ACTIONS_PAT }}  # Use ACTIONS_PAT for committing changes
         run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
+          git config --local user.email "actions@github.com"
+          git config --local user.name "GitHub Actions Bot"
           git add csv_data.csv
           git commit -m "csv_data.csv updated with new PDF metadata" || echo "No changes to commit"
-          git push
+          git push "https://x-access-token:${{ secrets.ACTIONS_PAT }}@github.com/${{ github.repository }}.git"
