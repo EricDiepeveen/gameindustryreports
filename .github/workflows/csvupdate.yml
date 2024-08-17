@@ -27,40 +27,24 @@ jobs:
             const path = require('path');
             const crypto = require('crypto');
 
+            // Function to generate unique ID
             function generate_id(file_path) {
               return crypto.createHash('md5').update(file_path).digest('hex');
             }
 
+            // Function to clean strings
             function cleanString(str) {
               return str
-                  .replace(/,/g, '')                           // Remove all commas
-                  .replace(/(?<!\s)-(?=\s)|(?<=\s)-(?=\S)|(?<=\S)-(?=\s)/g, ' ') // Replace hyphens connecting words with a space
-                  .replace(/_/g, ' ')                           // Replace underscores with spaces
-                  .trim();                                      // Trim whitespace from the start and end
-              }
-
-            function extract_metadata(file_path) {
-              const baseName = path.basename(file_path);
-              const currentDate = new Date().toISOString().split('T')[0];
-              const currentYear = new Date().getFullYear();
-              const currentMonth = new Date().getMonth();
-              const currentQuarter = Math.floor(currentMonth / 3) + 1;
-
-              return {
-                title: cleanString(baseName),
-                categories: 'Uncategorized',
-                description: `Report file located at ${cleanString(file_path)}`,
-                creation_date: currentDate,
-                upload_date: currentDate,
-                report_year: currentYear,
-                report_quarter: currentQuarter,
-                image_url: '',
-                pdf_url: file_path,
-              };
+                .replace(/,/g, '')                           // Remove all commas
+                .replace(/(?<!\s)-(?=\s)|(?<=\s)-(?=\S)|(?<=\S)-(?=\s)/g, ' ') // Replace hyphens connecting words with a space
+                .replace(/_/g, ' ')                           // Replace underscores with spaces
+                .trim();                                      // Trim whitespace
             }
 
             const csvFilePath = 'csv_data.csv';
             const pdfFiles = [];
+            const delimiter = ';'; // Use semicolon as a delimiter
+            const csvHeader = 'ID;Title;Categories;Description;Creation Date;Upload Date;Report Year;Report Quarter;Image URL;PDF URL\n';
 
             // Collect PDF files from the repository, including subfolders
             const walkSync = (dir, fileList) => {
@@ -76,9 +60,6 @@ jobs:
             };
 
             const allPdfFiles = walkSync('.', pdfFiles);
-            const baseUrl = 'https://raw.githubusercontent.com/${{ github.repository }}/main/';
-            const csvHeader = 'ID,Title,Categories,Description,Creation Date,Upload Date,Report Year,Report Quarter,Image URL,PDF URL\n';
-
             let csvData;
             let existingEntries = {};
 
@@ -91,8 +72,9 @@ jobs:
               }
 
               csvData.forEach(line => {
-                const fields = line.split(',').map(field => field.trim()).filter(field => field !== "");
+                const fields = line.split(delimiter).map(field => field.trim()).filter(field => field !== "");
                 
+                // Ensure the length of the fields array is exactly 10
                 if (fields.length === 10) {
                   const [id, title, categories, description, creationDate, uploadDate, reportYear, reportQuarter, imageUrl, pdfUrl] = fields.map(cleanString);
                   existingEntries[id] = { id, title, categories, description, creationDate, uploadDate, reportYear, reportQuarter, imageUrl, pdfUrl };
@@ -129,9 +111,9 @@ jobs:
               }
             });
 
-            // Convert the entries back to CSV format
+            // Convert the entries back to CSV format using the new delimiter
             csvData = csvHeader.trim() + '\n' + Object.values(existingEntries).map(entry => {
-              return `${entry.id},${entry.title},${entry.categories},${entry.description},${entry.creation_date},${entry.upload_date},${entry.report_year},${entry.report_quarter},${entry.image_url},${entry.pdf_url}`;
+              return `${entry.id};${entry.title};${entry.categories};${entry.description};${entry.creation_date};${entry.upload_date};${entry.report_year};${entry.report_quarter};${entry.image_url};${entry.pdf_url}`;
             }).join('\n') + '\n';
 
             // Write the CSV data back to the file
