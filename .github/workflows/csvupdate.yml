@@ -77,17 +77,20 @@ jobs:
             if (fs.existsSync(csvFilePath)) {
               csvData = fs.readFileSync(csvFilePath, 'utf-8').split('\n');
               
-              // Remove the header row if it exists and any empty lines
-              if (csvData[0] === csvHeader.trim()) {
+              // Remove the header row if it exists
+              if (csvData[0].trim() === csvHeader.trim()) {
                 csvData.shift();
               }
-              // Process each line from CSV
+              
               csvData.forEach(line => {
-                // Split by comma and check for adequate fields
                 const fields = line.split(',').map(field => field.trim());
-                if (fields.length === 10 && fields[0]) { // Ensure there's an ID present
+                
+                // Ensure each row has exactly 10 columns
+                if (fields.length === 10) {
                   const [id, title, categories, description, creationDate, uploadDate, reportYear, reportQuarter, imageUrl, pdfUrl] = fields;
                   existingEntries[id] = { id, title, categories, description, creationDate, uploadDate, reportYear, reportQuarter, imageUrl, pdfUrl };
+                } else {
+                  console.warn(`Skipping malformed row: ${line}`);
                 }
               });
             } else {
