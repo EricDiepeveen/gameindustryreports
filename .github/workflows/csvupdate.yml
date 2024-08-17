@@ -1,0 +1,58 @@
+name: Update CSV File
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  csv-update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Install dependencies
+        run: |
+          pip install pandas
+
+      - name: Create or update CSV file
+        run: |
+          python - <<EOF
+          import os
+          import pandas as pd
+          import glob
+
+          pdf_files_path = '.'
+
+          pdf_files = []
+          for root, dirs, files in os.walk('.'):
+              for file in files:
+                  if file.endswith(".pdf"):
+                      pdf_files.append(os.path.join(root, file))
+
+          csv_data = []
+
+          for pdf_file in pdf_files:
+              metadata = extract_metadata(pdf_file)
+              csv_data.append({
+                  'ID': len(csv_data) + 1,
+                  'Title': metadata['title'],
+                  'Categories': metadata['categories'],
+                  'Description': metadata['description'],
+                  'Creation Date': metadata['creation_date'],
+                  'Upload Date': metadata['upload_date'],
+                  'Report Year': metadata['report_year'],
+                  'Report Quarter': metadata['report_quarter'],
+                  'Image URL': metadata['image_url'],
+                  'PDF URL': pdf_file,
+              })
+
+          if not os.path.exists('csv_data.csv'):
+              pd.DataFrame(csv_data).to_csv('csv_data.csv', index=False)
+          else:
+              existing_data = pd.read_csv('csv_data.csv')
+              updated_data = pd.concat([existing_data, csv_data])
+              updated_data.to_csv('csv_data.csv', index=False)
+
+          EOF
