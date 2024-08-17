@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - '**/*.pdf'  # Trigger only when a PDF file is added or modified
+  workflow_dispatch:  # Allows the workflow to be triggered manually
 
 jobs:
   updateCSV:
