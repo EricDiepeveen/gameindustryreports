@@ -1,0 +1,99 @@
+name: Generate Preview Images
+
+on:
+  workflow_run:
+    workflows: ["Update csv_data.csv with new PDFs"]  # Name of the first workflow
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      recreate:  # Boolean option to control the recreation of images
+        description: 'Recreate all images'
+        required: false
+        default: 'false'
+
+jobs:
+  generateImages:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4  # Use the latest version for compatibility
+
+      - name: Set up Python
+        uses: actions/setup-python@v4  # Ensure Python is available
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y poppler-utils  # Install poppler-utils for pdf2image
+          python -m pip install --upgrade pip
+          pip install pdf2image
+
+      - name: Generate PNG images and update CSV
+        run: |
+          python - <<EOF
+import os
+import csv
+from pdf2image import convert_from_path
+
+# Paths and URLs
+csv_file_path = 'csv_data.csv'
+metadata_folder = 'metadata'
+base_url = 'https://raw.githubusercontent.com/${{ github.repository }}/main/'
+recreate_images = "${{ github.event.inputs.recreate }}" == "true"
+
+# Ensure the metadata folder exists
+os.makedirs(metadata_folder, exist_ok=True)
+
+# Read and update the CSV file
+rows = []
+with open(csv_file_path, mode='r', newline='', encoding='utf-8') as csvfile:
+    reader = csv.DictReader(csvfile)
+    for row in reader:
+        pdf_url = row['PDF URL']
+        pdf_id = row['ID']
+        pdf_path = pdf_url.replace(base_url, '')
+
+        # Determine the image path
+        image_name = f'{pdf_id}.png'
+        image_path = os.path.join(metadata_folder, image_name)
+        
+        # Determine the image URL
+        image_url = f'{base_url}{metadata_folder}/{image_name}'
+
+        # Update the image URL in the CSV row
+        row['Image URL'] = image_url
+
+        # Skip existing images unless we are recreating all images
+        if not recreate_images and os.path.exists(image_path):
+            rows.append(row)
+            continue
+
+        # Convert the first page of the PDF to an image
+        images = convert_from_path(pdf_path, first_page=1, last_page=1)
+
+        # Save the image with the ID name
+        images[0].save(image_path, 'PNG')
+        
+        rows.append(row)
+
+# Write the updated rows back to the CSV file
+csv_header = reader.fieldnames
+with open(csv_file_path, mode='w', newline='', encoding='utf-8') as csvfile:
+    writer = csv.DictWriter(csvfile, fieldnames=csv_header)
+    writer.writeheader()
+    writer.writerows(rows)
+EOF
+
+      - name: Commit images and updated CSV
+        env:
+          ACTIONS_PAT: ${{ secrets.ACTIONS_PAT }}  # Use ACTIONS_PAT for committing changes
+        run: |
+          git config --local user.email "actions@github.com"
+          git config --local user.name "GitHub Actions Bot"
+          git add metadata/*.png
+          git add csv_data.csv
+          git commit -m "Generated images from PDFs and updated CSV with image URLs"
+          git push "https://x-access-token:${{ secrets.ACTIONS_PAT }}@github.com/${{ github.repository }}.git"
