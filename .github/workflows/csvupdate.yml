@@ -2,16 +2,16 @@ name: Update CSV File
 
 on:
   push:
-    branches:
-      - main
+    paths:
+      - '**/*.pdf'  # Trigger only when a PDF file is added or modified
 
 jobs:
   csv-update:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3  # Updated to use node16
+      - name: Checkout main branch
+        uses: actions/checkout@v3
 
       - name: Set up Python
         uses: actions/setup-python@v2
@@ -20,9 +20,9 @@ jobs:
         run: |
           pip install pandas
 
-      - name: Create or update CSV file
+      - name: Update CSV file
         env:
-          GITHUB_TOKEN: ${{ secrets.ACTIONS_PAT }}  # Use the PAT for committing changes
+          GITHUB_TOKEN: ${{ secrets.ACTIONS_PAT }}  # Ensure you have set this secret in your repository
         run: |
           python - <<EOF
 import os
@@ -55,8 +55,9 @@ for root, _, files in os.walk('.'):
         if file.endswith(".pdf"):
             pdf_files.append(os.path.join(root, file))
 
+
 # Load existing CSV data
-csv_file_path = 'csv_data.csv'
+csv_file_path = 'data/stats.csv'
 if os.path.exists(csv_file_path):
     existing_data = pd.read_csv(csv_file_path)
 else:
