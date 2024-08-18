@@ -12,12 +12,16 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4  # Updated to the latest version to ensure compatibility with Node.js 20
+        uses: actions/checkout@v4  # Updated to the latest version to ensure compatibility
 
       - name: Setup Node.js
         uses: actions/setup-node@v4  # Updated to the latest version
         with:
           node-version: '20'  # Ensure it uses Node.js 20
+
+      - name: Install dependencies
+        run: |
+          npm install pdf-parse  # Install pdf-parse library
 
       - name: Update CSV data
         uses: actions/github-script@v7  # Updated to the latest version
@@ -26,6 +30,7 @@ jobs:
             const fs = require('fs');
             const path = require('path');
             const crypto = require('crypto');
+            const pdf = require('pdf-parse');
 
             // Function to generate unique ID
             function generate_id(file_path) {
@@ -39,6 +44,34 @@ jobs:
                 .replace(/(?<!\s)-(?=\s)|(?<=\s)-(?=\S)|(?<=\S)-(?=\s)/g, ' ') // Replace hyphens connecting words with a space
                 .replace(/_/g, ' ')                           // Replace underscores with spaces
                 .trim();                                      // Trim whitespace
+            }
+
+            // Function to extract metadata from PDF
+            async function extract_metadata(pdfFilePath) {
+              const dataBuffer = fs.readFileSync(pdfFilePath);
+              
+              try {
+                const data = await pdf(dataBuffer);
+                
+                // Extract relevant metadata
+                return {
+                  title: data.info.Title || 'Unknown Title',
+                  categories: 'Sample Category', // Define how to populate this
+                  description: data.info.Subject || 'No Description',
+                  creation_date: data.info.CreationDate || 'Unknown Date',
+                  upload_date: new Date().toISOString(), // Use current date
+                  report_year: new Date().getFullYear(), // Example field
+                  report_quarter: 'Q1', // You can adjust this accordingly
+                  image_url: '', // Define how to fetch this if needed
+                };
+              } catch (error) {
+                console.error(`Error reading PDF metadata for ${pdfFilePath}:`, error);
+                return {
+                  title: 'Error', categories: 'Error', description: 'Error', 
+                  creation_date: 'Error', upload_date: 'Error', 
+                  report_year: 'Error', report_quarter: 'Error', 
+                };
+              }
             }
 
             const csvFilePath = 'csv_data.csv';
@@ -86,14 +119,14 @@ jobs:
               csvData = [csvHeader.trim()]; // Add header if CSV doesn't exist
             }
 
-            allPdfFiles.forEach(pdfFile => {
-              const metadata = extract_metadata(pdfFile);
-              const pdfUrl = baseUrl + pdfFile;
+            // Process all PDF files asynchronously
+            await Promise.all(allPdfFiles.map(async (pdfFile) => {
+              const metadata = await extract_metadata(pdfFile);
+              const pdfUrl = `https://raw.githubusercontent.com/${process.env.GITHUB_REPOSITORY}/main/${pdfFile}`; // Adjust base URL as needed
               const id = generate_id(pdfFile);
 
               if (existingEntries[id]) {
-                // Update the URL in the existing entry
-                existingEntries[id].pdf_url = pdfUrl;
+                existingEntries[id].pdf_url = pdfUrl; // Update existing entry
               } else {
                 // Add new entry
                 existingEntries[id] = {
@@ -109,7 +142,7 @@ jobs:
                   pdf_url: pdfUrl,
                 };
               }
-            });
+            }));
 
             // Convert the entries back to CSV format using the new delimiter
             csvData = csvHeader.trim() + '\n' + Object.values(existingEntries).map(entry => {
