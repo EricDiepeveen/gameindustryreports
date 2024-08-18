@@ -15,7 +15,7 @@ on:
 jobs:
   generateImages:
     runs-on: ubuntu-latest
-
+    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4  # Use the latest version for compatibility
@@ -27,9 +27,9 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update && sudo apt-get install -y poppler-utils  # For pdf2image dependencies
-          python -m pip install --upgrade pip
-          pip install pdf2image
+          sudo apt-get update
+          sudo apt-get install -y imagemagick poppler-utils  # Install imagemagick for pdf conversion
+          npm install pdf-parse
 
       - name: Generate PNG images and update CSV
         uses: actions/github-script@v7
@@ -43,7 +43,7 @@ jobs:
             const csvFilePath = 'csv_data.csv';
             const metadataFolder = 'metadata';
             const recreateImages = "${{ github.event.inputs.recreate }}" === "true";
-
+                
             // Ensure the metadata folder exists
             if (!fs.existsSync(metadataFolder)){
                 fs.mkdirSync(metadataFolder);
@@ -80,14 +80,12 @@ jobs:
                 };
             });
 
-            // Process each row to generate images
-            let generatedImages = [];  // Track generated image files
-
+            // Ensure PDF files are downloaded and images are generated
             csvData.forEach(entry => {
                 const { id, pdfUrl } = entry;
 
                 // Construct paths
-                const pdfPath = pdfUrl.replace(baseUrl, '');
+                const pdfPath = pdfUrl.replace(baseUrl, ''); // Assuming PDF URLs are already raw GitHub URLs
                 const imagePath = path.resolve(metadataFolder, `${id}.png`);
                 const imageURL = `${baseUrl}${metadataFolder}/${id}.png`;
 
@@ -95,9 +93,13 @@ jobs:
                 if (!recreateImages && fs.existsSync(imagePath)) {
                     entry.imageUrl = imageURL;  // Update image URL if image already exists
                 } else {
-                    convertPDFToImage(pdfPath, imagePath);  // Convert PDF to image
-                    entry.imageUrl = imageURL;  // Update image URL after converting
-                    generatedImages.push(imagePath);  // Track the generated image
+                    // Try to convert PDF to image
+                    try {
+                        convertPDFToImage(pdfPath, imagePath);  // Convert PDF to image
+                        entry.imageUrl = imageURL;  // Update image URL after converting
+                    } catch (error) {
+                        console.error(`Failed to convert ${pdfPath}: ${error.message}`);
+                    }
                 }
             });
 
@@ -115,7 +117,7 @@ jobs:
         run: |
           git config --local user.email "actions@github.com"
           git config --local user.name "GitHub Actions Bot"
-          
+
           # Check if any images were generated before trying to commit
           if [ "$(ls -A metadata/*.png 2>/dev/null)" ] || [ -n "$(git status --porcelain csv_data.csv)" ]; then
             git add metadata/*.png csv_data.csv
