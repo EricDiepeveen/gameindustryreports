@@ -15,10 +15,10 @@ on:
 jobs:
   generateImages:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4  # Use the latest version for compatibility
+        uses: actions/checkout@v4 
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -28,8 +28,12 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y imagemagick poppler-utils  # Install imagemagick for pdf conversion
+          sudo apt-get install -y imagemagick poppler-utils 
           npm install pdf-parse
+      
+      - name: Configure ImageMagick Security Policy
+        run: |
+          echo '<policy domain="coder" rights="read|write" pattern="PDF"/>' | sudo tee -a /etc/ImageMagick-6/policy.xml
 
       - name: Generate PNG images and update CSV
         uses: actions/github-script@v7
@@ -43,7 +47,7 @@ jobs:
             const csvFilePath = 'csv_data.csv';
             const metadataFolder = 'metadata';
             const recreateImages = "${{ github.event.inputs.recreate }}" === "true";
-                
+
             // Ensure the metadata folder exists
             if (!fs.existsSync(metadataFolder)){
                 fs.mkdirSync(metadataFolder);
@@ -60,7 +64,7 @@ jobs:
             };
 
             const convertPDFToImage = (pdfPath, imagePath) => {
-                execSync(`convert -density 150 ${pdfPath}[0] -quality 90 ${imagePath}`);
+                execSync(`convert -density 150 "${pdfPath}[0]" -quality 90 "${imagePath}"`);
             };
 
             const rows = readCSV(csvFilePath);
@@ -80,12 +84,12 @@ jobs:
                 };
             });
 
-            // Ensure PDF files are downloaded and images are generated
+            // Process each row to generate images
             csvData.forEach(entry => {
                 const { id, pdfUrl } = entry;
 
                 // Construct paths
-                const pdfPath = pdfUrl.replace(baseUrl, ''); // Assuming PDF URLs are already raw GitHub URLs
+                const pdfPath = pdfUrl.replace(baseUrl, '');
                 const imagePath = path.resolve(metadataFolder, `${id}.png`);
                 const imageURL = `${baseUrl}${metadataFolder}/${id}.png`;
 
@@ -93,7 +97,6 @@ jobs:
                 if (!recreateImages && fs.existsSync(imagePath)) {
                     entry.imageUrl = imageURL;  // Update image URL if image already exists
                 } else {
-                    // Try to convert PDF to image
                     try {
                         convertPDFToImage(pdfPath, imagePath);  // Convert PDF to image
                         entry.imageUrl = imageURL;  // Update image URL after converting
@@ -117,7 +120,7 @@ jobs:
         run: |
           git config --local user.email "actions@github.com"
           git config --local user.name "GitHub Actions Bot"
-
+          
           # Check if any images were generated before trying to commit
           if [ "$(ls -A metadata/*.png 2>/dev/null)" ] || [ -n "$(git status --porcelain csv_data.csv)" ]; then
             git add metadata/*.png csv_data.csv
