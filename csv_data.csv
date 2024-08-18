@@ -1,5 +1,4 @@
 ID,Title,Categories,Description,Creation Date,Upload Date,Report Year,Report Quarter,Image URL,PDF URL
-9691173b1e3a8fe1f4df00ebce10607a,Error,Error,Error,Error,Error,Error,Error,undefined,https://raw.githubusercontent.com/EricDiepeveen/gameindustryreports/main/node_modules/pdf-parse/test/data/03-invalid.pdf
 8540c30c4f550ab53777a228f433c2e7,Unknown Title,Sample Category,No Description,D:20181018105015+01'00',2024-08-18T09:01:31.272Z,2024,Q1,,https://raw.githubusercontent.com/EricDiepeveen/gameindustryreports/main/node_modules/pdf-parse/test/data/05-versions-space.pdf
 a8a6bcfa2a4fab11ae4201114953cdc3,Unknown Title,Sample Category,No Description,Unknown Date,2024-08-18T09:01:36.651Z,2024,Q1,,https://raw.githubusercontent.com/EricDiepeveen/gameindustryreports/main/Marketing & Streaming/Stream Elements & Arsenal.gg - Streaming Market (2020).pdf
 e2a536e5ef6c73892fa80eaf407d7acf,sag-39-3-4-0902-21:sag-0,Sample Category,No Description,D:20090626094504+03'00',2024-08-18T09:01:37.373Z,2024,Q1,,https://raw.githubusercontent.com/EricDiepeveen/gameindustryreports/main/node_modules/pdf-parse/test/data/04-valid.pdf
