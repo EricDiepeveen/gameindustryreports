@@ -28,12 +28,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y imagemagick poppler-utils 
-          npm install pdf-parse
-      
-      - name: Configure ImageMagick Security Policy
-        run: |
-          echo '<policy domain="coder" rights="read|write" pattern="PDF"/>' | sudo tee -a /etc/ImageMagick-6/policy.xml
+          sudo apt-get install -y poppler-utils
 
       - name: Generate PNG images and update CSV
         uses: actions/github-script@v7
@@ -49,7 +44,7 @@ jobs:
             const recreateImages = "${{ github.event.inputs.recreate }}" === "true";
 
             // Ensure the metadata folder exists
-            if (!fs.existsSync(metadataFolder)){
+            if (!fs.existsSync(metadataFolder)) {
                 fs.mkdirSync(metadataFolder);
             }
 
@@ -64,7 +59,19 @@ jobs:
             };
 
             const convertPDFToImage = (pdfPath, imagePath) => {
-                execSync(`convert -density 150 "${pdfPath}[0]" -quality 90 "${imagePath}"`);
+                if (!fs.existsSync(pdfPath)) {
+                    console.error(`PDF file not found: ${pdfPath}`);
+                    return;
+                }
+                console.log(`Converting PDF: ${pdfPath} to Image: ${imagePath}`);
+
+                // Using pdftoppm to convert PDF to PNG
+                const outputPrefix = path.parse(imagePath).name; // Get the base name without extension
+                try {
+                    execSync(`pdftoppm "${pdfPath}" "${outputPrefix}" -png -f 1 -l 1`);
+                } catch (error) {
+                    console.error(`Failed to convert ${pdfPath}: ${error.message}`);
+                }
             };
 
             const rows = readCSV(csvFilePath);
@@ -97,11 +104,11 @@ jobs:
                 if (!recreateImages && fs.existsSync(imagePath)) {
                     entry.imageUrl = imageURL;  // Update image URL if image already exists
                 } else {
-                    try {
-                        convertPDFToImage(pdfPath, imagePath);  // Convert PDF to image
-                        entry.imageUrl = imageURL;  // Update image URL after converting
-                    } catch (error) {
-                        console.error(`Failed to convert ${pdfPath}: ${error.message}`);
+                    convertPDFToImage(pdfPath, imagePath);  // Convert PDF to image
+                    if (fs.existsSync(imagePath)) {
+                        entry.imageUrl = imageURL;  // Update image URL if conversion was successful
+                    } else {
+                        console.error(`Failed to generate image for ${pdfPath}`);
                     }
                 }
             });
