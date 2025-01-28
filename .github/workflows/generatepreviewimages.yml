@@ -86,20 +86,15 @@ jobs:
                     creationDate: row[4],
                     uploadDate: row[5],
                     reportYear: row[6],
-                    reportQuarter: row[7],
-                    imageUrl: row[8],
-                    pdfUrl: row[9]
+                    reportMonth: row[7],
+                    pdfUrl: row[8]
                 };
             });
 
-            // Process each row to generate images
-            let newRows = [headers];
-            csvData.forEach(entry => {
-                const { id, pdfUrl } = entry;
-
+            for (const entry of csvData) {
                 // Construct paths
-                const pdfPath = path.resolve(__dirname, 'pdfs', pdfUrl.split('/').pop());
-                const imagePath = path.resolve(metadataFolder, `${id}.png`);
+                const pdfPath = path.resolve(__dirname, 'pdfs', entry.pdfUrl.split('/').pop());
+                const imagePath = path.resolve(metadataFolder, `${entry.id}.png`);
 
                 if (recreateImages || !fs.existsSync(imagePath)) {
                     convertPDFToImage(pdfPath, imagePath);
@@ -108,9 +103,9 @@ jobs:
                 entry.imageUrl = baseUrl + path.relative(metadataFolder, imagePath).replace(/\\/g, '/');
 
                 newRows.push(entry);
-            });
+            }
 
-            writeCSV(csvFilePath, newRows);
+            writeCSV(csvFilePath, csvData);
 
       - name: Commit changes to repository
         run: |
