@@ -27,10 +27,11 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y poppler-utils
+          apt-get update
+          apt-get install -y poppler-utils
 
       - name: Generate PNG images and update CSV
+        id: generate_images
         uses: actions/github-script@v7
         with:
           script: |
@@ -92,6 +93,7 @@ jobs:
             });
 
             // Process each row to generate images
+            let newRows = [headers];
             csvData.forEach(entry => {
                 const { id, pdfUrl } = entry;
 
@@ -102,37 +104,21 @@ jobs:
 
                 // Check if the image already exists
                 if (!recreateImages && fs.existsSync(imagePath)) {
-                    entry.imageUrl = imageURL;  // Update image URL if image already exists
+                    entry.imageUrl = imageURL;
                 } else {
-                    convertPDFToImage(pdfPath, imagePath);  // Convert PDF to image
-                    if (fs.existsSync(imagePath)) {
-                        entry.imageUrl = imageURL;  // Update image URL if conversion was successful
-                    } else {
-                        console.error(`Failed to generate image for ${pdfPath}`);
-                    }
+                    convertPDFToImage(pdfPath, imagePath);
+                    entry.imageUrl = imageURL;
                 }
+                newRows.push(entry);
             });
-
-            // Write the updated rows back to the CSV file, including the new image URLs
-            const newRows = [headers].concat(csvData.map(entry => [
-                entry.id, entry.title, entry.categories, entry.description, entry.creationDate,
-                entry.uploadDate, entry.reportYear, entry.reportQuarter, entry.imageUrl, entry.pdfUrl
-            ]));
 
             writeCSV(csvFilePath, newRows);
 
-      - name: Commit images and updated CSV
-        env:
-          ACTIONS_PAT: ${{ secrets.ACTIONS_PAT }}  # Use ACTIONS_PAT for committing changes
+      - name: Commit changes
+        if: steps.generate_images.outputs.changes == 'true'
         run: |
-          git config --local user.email "actions@github.com"
-          git config --local user.name "GitHub Actions Bot"
-          
-          # Check if any images were generated before trying to commit
-          if [ "$(ls -A metadata/*.png 2>/dev/null)" ] || [ -n "$(git status --porcelain csv_data.csv)" ]; then
-            git add metadata/*.png csv_data.csv
-            git commit -m "Generated images from PDFs and updated CSV with image URLs"
-            git push "https://x-access-token:${{ secrets.ACTIONS_PAT }}@github.com/${{ github.repository }}.git"
-          else
-            echo "No new images or changes to commit."
-          fi
+          git config --global user.name "GitHub Actions Bot"
+          git config --global user.email "actions@github.com"
+          git add metadata/*.png csv_data.csv
+          git commit -m "Generated images from PDFs and updated CSV with image URLs"
+          git push origin "${{ github.ref }}"
