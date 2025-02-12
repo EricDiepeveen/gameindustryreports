@@ -1,0 +1,222 @@
+name: Process PDFs and Generate Metadata
+
+on:
+  push:
+    paths:
+      - '**/*.pdf'
+  workflow_dispatch:
+
+jobs:
+  process-pdfs:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: |
+          npm install pdf-parse
+          npm install @pdf-lib/reduce-file-size
+          npm install openai
+
+      - name: Process PDFs and Generate Metadata
+        uses: actions/github-script@v7
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_KV_NAMESPACE_ID: ${{ secrets.CF_KV_NAMESPACE_ID }}
+        with:
+          script: |
+            const fs = require('fs').promises;
+            const path = require('path');
+            const crypto = require('crypto');
+            const pdf = require('pdf-parse');
+            const { OpenAI } = require('openai');
+            
+            const openai = new OpenAI({
+              apiKey: process.env.OPENAI_API_KEY
+            });
+
+            // Utility functions
+            function generate_id(file_path) {
+              return crypto.createHash('md5').update(file_path).digest('hex');
+            }
+
+            async function extract_text_from_pdf(pdfPath) {
+              try {
+                const dataBuffer = await fs.readFile(pdfPath);
+                const data = await pdf(dataBuffer);
+                return {
+                  text: data.text,
+                  info: data.info,
+                  metadata: {
+                    pages: data.numpages,
+                    author: data.info.Author || 'Unknown',
+                    creationDate: data.info.CreationDate || new Date().toISOString(),
+                  }
+                };
+              } catch (error) {
+                console.error(`Error extracting text from ${pdfPath}:`, error);
+                throw error;
+              }
+            }
+
+            async function generate_ai_summary(text) {
+              try {
+                const prompt = `Please provide a concise summary of this game industry report, highlighting key insights and main points. Format the response as JSON with 'summary' and 'keyPoints' fields. Summary should be one paragraph, and keyPoints should be an array of 3-5 main takeaways.\n\nReport text:\n${text.substring(0, 15000)}`; // Limit text length
+
+                const response = await openai.chat.completions.create({
+                  model: "gpt-4-turbo-preview",
+                  messages: [
+                    {
+                      role: "system",
+                      content: "You are a professional analyst specializing in the gaming industry. Provide clear, accurate summaries focusing on key market insights, trends, and data points."
+                    },
+                    {
+                      role: "user",
+                      content: prompt
+                    }
+                  ],
+                  response_format: { type: "json_object" }
+                });
+
+                return {
+                  ...JSON.parse(response.choices[0].message.content),
+                  generatedAt: new Date().toISOString(),
+                  modelVersion: "gpt-4-turbo-preview"
+                };
+              } catch (error) {
+                console.error('Error generating AI summary:', error);
+                throw error;
+              }
+            }
+
+            async function upload_to_cloudflare_kv(key, value) {
+              try {
+                const response = await fetch(
+                  `https://api.cloudflare.com/client/v4/accounts/${process.env.CF_ACCOUNT_ID}/storage/kv/namespaces/${process.env.CF_KV_NAMESPACE_ID}/values/${key}`,
+                  {
+                    method: 'PUT',
+                    headers: {
+                      'Authorization': `Bearer ${process.env.CF_API_TOKEN}`,
+                      'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(value)
+                  }
+                );
+
+                if (!response.ok) {
+                  throw new Error(`Failed to upload to Cloudflare KV: ${response.statusText}`);
+                }
+              } catch (error) {
+                console.error('Error uploading to Cloudflare KV:', error);
+                throw error;
+              }
+            }
+
+            // Main processing logic
+            async function processPDF(pdfPath) {
+              const id = generate_id(pdfPath);
+              console.log(`Processing PDF: ${pdfPath}`);
+
+              try {
+                // Extract text and metadata
+                const { text, info, metadata } = await extract_text_from_pdf(pdfPath);
+                
+                // Generate AI summary
+                const aiSummary = await generate_ai_summary(text);
+
+                // Get file stats
+                const stats = await fs.stat(pdfPath);
+
+                // Prepare report data
+                const report = {
+                  id,
+                  title: info.Title || path.basename(pdfPath, '.pdf'),
+                  path: pdfPath,
+                  category: [path.dirname(pdfPath).split(path.sep)[0]],
+                  metadata: {
+                    author: metadata.author,
+                    publishDate: metadata.creationDate,
+                    region: [], // To be determined from content analysis
+                    year: new Date(metadata.creationDate).getFullYear(),
+                    description: info.Subject || ''
+                  },
+                  aiSummary,
+                  previewUrl: `https://raw.githubusercontent.com/${process.env.GITHUB_REPOSITORY}/main/metadata/${id}.png`,
+                  pdfUrl: `https://raw.githubusercontent.com/${process.env.GITHUB_REPOSITORY}/main/${pdfPath}`,
+                  size: stats.size,
+                  lastModified: stats.mtime.toISOString()
+                };
+
+                // Upload to Cloudflare KV
+                await upload_to_cloudflare_kv(id, report);
+                
+                return { success: true, id, report };
+              } catch (error) {
+                console.error(`Failed to process ${pdfPath}:`, error);
+                return { success: false, id, error: error.message };
+              }
+            }
+
+            // Find and process all PDFs
+            async function processAllPDFs() {
+              const processedFiles = [];
+              const failedFiles = [];
+
+              async function walkDir(dir) {
+                const files = await fs.readdir(dir);
+                for (const file of files) {
+                  const fullPath = path.join(dir, file);
+                  const stat = await fs.stat(fullPath);
+                  
+                  if (stat.isDirectory() && !file.startsWith('.')) {
+                    await walkDir(fullPath);
+                  } else if (file.toLowerCase().endsWith('.pdf')) {
+                    const result = await processPDF(fullPath);
+                    if (result.success) {
+                      processedFiles.push(result);
+                    } else {
+                      failedFiles.push({ path: fullPath, error: result.error });
+                    }
+                  }
+                }
+              }
+
+              await walkDir('.');
+              
+              // Generate summary report
+              const summary = {
+                timestamp: new Date().toISOString(),
+                totalProcessed: processedFiles.length,
+                totalFailed: failedFiles.length,
+                processedFiles: processedFiles.map(f => ({ id: f.id, path: f.report.path })),
+                failedFiles
+              };
+
+              await fs.writeFile('pdf-processing-report.json', JSON.stringify(summary, null, 2));
+              
+              console.log('Processing Summary:');
+              console.log(`Successfully processed: ${processedFiles.length} files`);
+              console.log(`Failed to process: ${failedFiles.length} files`);
+              
+              if (failedFiles.length > 0) {
+                console.log('\nFailed files:');
+                failedFiles.forEach(f => console.log(`- ${f.path}: ${f.error}`));
+              }
+            }
+
+            await processAllPDFs();
+
+      - name: Upload Processing Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdf-processing-report
+          path: pdf-processing-report.json 
