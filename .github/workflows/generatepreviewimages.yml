@@ -1,8 +1,8 @@
-name: Generate Images from PDFs
+name: Generate Preview Images
 
 on:
   workflow_run:
-    workflows: ["Update csv_data.csv with new PDFs"]
+    workflows: ["Update CSV with PDF files"]
     types:
       - completed
   workflow_dispatch:
@@ -43,74 +43,69 @@ jobs:
             const csvFilePath = 'csv_data.csv';
             const metadataFolder = 'metadata';
             const recreateImages = "${{ github.event.inputs.recreate }}" === "true";
+            const delimiter = ';';
 
             // Ensure the metadata folder exists
             if (!fs.existsSync(metadataFolder)) {
                 fs.mkdirSync(metadataFolder);
             }
 
-            const readCSV = (filePath) => {
-                const data = fs.readFileSync(filePath, 'utf-8');
-                return data.split('\n').map(row => row.split(',')).filter(row => row.length > 1);
-            };
+            // Read CSV file
+            const csvContent = fs.readFileSync(csvFilePath, 'utf-8');
+            const rows = csvContent.split('\n').filter(row => row.trim());
+            const headers = rows[0].split(delimiter);
+            
+            // Find column indices
+            const idIndex = headers.indexOf('ID');
+            const filePathIndex = headers.indexOf('File Path');
+            const imageUrlIndex = headers.indexOf('Image URL');
 
-            const writeCSV = (filePath, rows) => {
-                const csvContent = rows.map(e => e.join(",")).join("\n");
-                fs.writeFileSync(filePath, csvContent, 'utf-8');
-            };
-
-            const convertPDFToImage = (pdfPath, imagePath) => {
-                if (!fs.existsSync(pdfPath)) {
-                    console.error(`PDF file not found: ${pdfPath}`);
-                    return;
-                }
-                console.log(`Converting PDF: ${pdfPath} to Image: ${imagePath}`);
-
-                // Using pdftoppm to convert PDF to PNG
-                const outputPrefix = path.parse(imagePath).name; // Get the base name without extension
-                try {
-                    execSync(`pdftoppm "${pdfPath}" "${outputPrefix}" -png -f 1 -l 1`);
-                } catch (error) {
-                    console.error(`Failed to convert ${pdfPath}: ${error.message}`);
-                }
-            };
-
-            const rows = readCSV(csvFilePath);
-            const headers = rows[0];  // Store the header row for later use
-            const csvData = rows.slice(1).map(row => {
-                return {
-                    id: row[0],
-                    title: row[1],
-                    categories: row[2],
-                    description: row[3],
-                    creationDate: row[4],
-                    uploadDate: row[5],
-                    reportYear: row[6],
-                    reportMonth: row[7],
-                    pdfUrl: row[8]
-                };
-            });
-
-            for (const entry of csvData) {
-                // Construct paths
-                const pdfPath = path.resolve(__dirname, 'pdfs', entry.pdfUrl.split('/').pop());
-                const imagePath = path.resolve(metadataFolder, `${entry.id}.png`);
-
-                if (recreateImages || !fs.existsSync(imagePath)) {
-                    convertPDFToImage(pdfPath, imagePath);
-                }
-
-                entry.imageUrl = baseUrl + path.relative(metadataFolder, imagePath).replace(/\\/g, '/');
-
-                newRows.push(entry);
+            // If Image URL column doesn't exist, add it
+            let newHeaders = [...headers];
+            if (imageUrlIndex === -1) {
+                newHeaders.push('Image URL');
             }
 
-            writeCSV(csvFilePath, csvData);
+            // Process each row
+            const newRows = [newHeaders.join(delimiter)];
+            
+            for (let i = 1; i < rows.length; i++) {
+                const row = rows[i].split(delimiter);
+                const id = row[idIndex];
+                const pdfPath = row[filePathIndex];
+                const imagePath = path.join(metadataFolder, `${id}.png`);
+                
+                // Generate image if it doesn't exist or recreation is requested
+                if (recreateImages || !fs.existsSync(imagePath)) {
+                    try {
+                        console.log(`Converting PDF: ${pdfPath} to Image: ${imagePath}`);
+                        const outputPrefix = path.join(metadataFolder, id);
+                        execSync(`pdftoppm -png -f 1 -l 1 -singlefile "${pdfPath}" "${outputPrefix}"`);
+                    } catch (error) {
+                        console.error(`Failed to convert ${pdfPath}: ${error.message}`);
+                    }
+                }
 
-      - name: Commit changes to repository
+                // Update row with image URL
+                const imageUrl = baseUrl + `metadata/${id}.png`;
+                if (imageUrlIndex === -1) {
+                    row.push(imageUrl);
+                } else {
+                    row[imageUrlIndex] = imageUrl;
+                }
+                
+                newRows.push(row.join(delimiter));
+            }
+
+            // Write updated CSV
+            fs.writeFileSync(csvFilePath, newRows.join('\n') + '\n');
+
+      - name: Commit changes
+        env:
+          ACTIONS_PAT: ${{ secrets.ACTIONS_PAT }}
         run: |
-          git config --global user.name 'GitHub Actions'
-          git config --global user.email 'github-actions@github.com'
+          git config --local user.email "actions@github.com"
+          git config --local user.name "GitHub Actions Bot"
           git add csv_data.csv metadata/
-          git commit -m "Update CSV with new image URLs"
-          git push
+          git commit -m "Update CSV with preview image URLs" || echo "No changes to commit"
+          git push "https://x-access-token:${{ secrets.ACTIONS_PAT }}@github.com/${{ github.repository }}.git"

@@ -1,9 +1,9 @@
-name: Update CSV when new PDF is uploaded
+name: Update CSV with PDF files
 
 on:
   push:
     paths:
-      - '**/*.pdf'  # Trigger only when a PDF file is added or modified
+      - '**/*.pdf'  # Trigger only when PDF files are changed
   workflow_dispatch:  # Allows the workflow to be triggered manually
 
 jobs:
@@ -12,19 +12,19 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4  # Updated to the latest version to ensure compatibility
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4  # Updated to the latest version
+        uses: actions/setup-node@v4
         with:
-          node-version: '20'  # Ensure it uses Node.js 20
+          node-version: '20'
 
       - name: Install dependencies
         run: |
-          npm install pdf-parse  # Install pdf-parse library
+          npm install pdf-parse
 
       - name: Update CSV data
-        uses: actions/github-script@v7  # Updated to the latest version
+        uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
@@ -37,139 +37,102 @@ jobs:
               return crypto.createHash('md5').update(file_path).digest('hex');
             }
 
-            // Function to clean strings
-            function cleanString(str) {
-              return str
-                .replace(/,/g, '')                           // Remove all commas
-                .replace(/(?<!\s)-(?=\s)|(?<=\s)-(?=\S)|(?<=\S)-(?=\s)/g, ' ') // Replace hyphens connecting words with a space
-                .replace(/_/g, ' ')                           // Replace underscores with spaces
-                .trim();                                      // Trim whitespace
+            // Function to get file size in bytes
+            function getFileSize(filePath) {
+              const stats = fs.statSync(filePath);
+              return stats.size;
             }
 
-            // Log for corrupt files
-            const corruptFilesLog = [];
+            // Function to get last modified date
+            function getLastModified(filePath) {
+              const stats = fs.statSync(filePath);
+              return stats.mtime.toISOString();
+            }
 
-            // Function to extract metadata from PDF
-            async function extract_metadata(pdfFilePath) {
-              const dataBuffer = fs.readFileSync(pdfFilePath);
-
+            // Function to extract PDF metadata
+            async function extractPdfMetadata(pdfPath) {
               try {
+                const dataBuffer = fs.readFileSync(pdfPath);
                 const data = await pdf(dataBuffer);
-                
-                // Extract relevant metadata
                 return {
-                  title: data.info.Title || 'Unknown Title',
-                  categories: 'Sample Category', // Define how to populate this
-                  description: data.info.Subject || 'No Description',
-                  creation_date: data.info.CreationDate || 'Unknown Date',
-                  upload_date: new Date().toISOString(), // Use current date
-                  report_year: new Date().getFullYear(), // Example field
-                  report_quarter: 'Q1', // You can adjust this accordingly
-                  image_url: '', // Define how to fetch this if needed
+                  title: data.info.Title || path.basename(pdfPath, '.pdf'),
+                  subject: data.info.Subject || 'No subject available',
+                  author: data.info.Author || 'Unknown',
+                  creationDate: data.info.CreationDate || 'Unknown'
                 };
               } catch (error) {
-                console.error(`Error reading PDF metadata for ${pdfFilePath}: ${error.message}`);
-                corruptFilesLog.push(pdfFilePath); // Log the corrupt file
+                console.error(`Error reading PDF metadata for ${pdfPath}: ${error.message}`);
                 return {
-                  title: 'Error', categories: 'Error', description: 'Error', 
-                  creation_date: 'Error', upload_date: 'Error', 
-                  report_year: 'Error', report_quarter: 'Error', 
+                  title: path.basename(pdfPath, '.pdf'),
+                  subject: 'Error reading metadata',
+                  author: 'Unknown',
+                  creationDate: 'Unknown'
                 };
               }
             }
 
             const csvFilePath = 'csv_data.csv';
             const pdfFiles = [];
-            const delimiter = ';'; // Use semicolon as a delimiter
-            const csvHeader = 'ID;Title;Categories;Description;Creation Date;Upload Date;Report Year;Report Quarter;Image URL;PDF URL\n';
+            const delimiter = ';';
+            const csvHeader = 'ID;File Path;Title;Subject;Author;Creation Date;Size (bytes);Last Modified;PDF URL;Image URL\n';
 
             // Collect PDF files from the repository, including subfolders
             const walkSync = (dir, fileList) => {
               const files = fs.readdirSync(dir);
               files.forEach(file => {
-                if (fs.statSync(path.join(dir, file)).isDirectory()) {
-                  fileList = walkSync(path.join(dir, file), fileList);
-                } else if (file.endsWith('.pdf')) {
-                  fileList.push(path.join(dir, file));
+                const fullPath = path.join(dir, file);
+                if (fs.statSync(fullPath).isDirectory()) {
+                  if (!file.startsWith('.') && file !== 'node_modules') {
+                    fileList = walkSync(fullPath, fileList);
+                  }
+                } else {
+                  if (file.toLowerCase().endsWith('.pdf')) {
+                    fileList.push(fullPath);
+                  }
                 }
               });
               return fileList;
             };
 
-            const allPdfFiles = walkSync('.', pdfFiles);
-            let csvData;
-            let existingEntries = {};
-
+            // Read existing CSV data if it exists
+            let existingEntries = new Map();
             if (fs.existsSync(csvFilePath)) {
-              csvData = fs.readFileSync(csvFilePath, 'utf-8').split('\n');
-
-              // Remove the header row if it exists
-              if (csvData[0].trim() === csvHeader.trim()) {
-                csvData.shift();
-              }
-
-              csvData.forEach(line => {
-                const fields = line.split(delimiter).map(field => field.trim()).filter(field => field !== "");
-                
-                // Ensure the length of the fields array is exactly 10
-                if (fields.length === 10) {
-                  const [id, title, categories, description, creationDate, uploadDate, reportYear, reportQuarter, imageUrl, pdfUrl] = fields.map(cleanString);
-                  existingEntries[id] = { id, title, categories, description, creationDate, uploadDate, reportYear, reportQuarter, imageUrl, pdfUrl };
-                } else {
-                  console.warn(`Skipping malformed row: ${line}`);
+              const existingData = fs.readFileSync(csvFilePath, 'utf-8').split('\n');
+              // Remove header and empty lines
+              existingData.slice(1).filter(line => line.trim()).forEach(line => {
+                const fields = line.split(delimiter);
+                if (fields.length >= 9) {
+                  // Preserve existing image URL if it exists
+                  existingEntries.set(fields[0], fields[9] || '');
                 }
               });
-            } else {
-              csvData = [csvHeader.trim()]; // Add header if CSV doesn't exist
             }
 
-            // Process all PDF files asynchronously
-            await Promise.all(allPdfFiles.map(async (pdfFile) => {
-              const metadata = await extract_metadata(pdfFile);
-              const pdfUrl = `https://raw.githubusercontent.com/${process.env.GITHUB_REPOSITORY}/main/${pdfFile}`; // Base URL for the PDF
-              const id = generate_id(pdfFile);
+            const allPdfFiles = walkSync('.', pdfFiles);
+            let csvData = csvHeader;
 
-              if (existingEntries[id]) {
-                existingEntries[id].pdf_url = pdfUrl; // Update existing entry
-              } else {
-                // Add new entry
-                existingEntries[id] = {
-                  id,
-                  title: metadata.title,
-                  categories: metadata.categories,
-                  description: metadata.description,
-                  creation_date: metadata.creation_date,
-                  upload_date: metadata.upload_date,
-                  report_year: metadata.report_year,
-                  report_quarter: metadata.report_quarter,
-                  image_url: metadata.image_url,
-                  pdf_url: pdfUrl,
-                };
-              }
+            // Process all PDF files
+            await Promise.all(allPdfFiles.map(async (pdfPath) => {
+              const id = generate_id(pdfPath);
+              const metadata = await extractPdfMetadata(pdfPath);
+              const size = getFileSize(pdfPath);
+              const lastModified = getLastModified(pdfPath);
+              const pdfUrl = `https://raw.githubusercontent.com/${process.env.GITHUB_REPOSITORY}/main/${pdfPath}`;
+              const imageUrl = existingEntries.get(id) || ''; // Preserve existing image URL
+
+              // Add entry to CSV
+              csvData += `${id};${pdfPath};${metadata.title};${metadata.subject};${metadata.author};${metadata.creationDate};${size};${lastModified};${pdfUrl};${imageUrl}\n`;
             }));
 
-            // Convert the entries back to CSV format using the new delimiter
-            csvData = csvHeader.trim() + '\n' + Object.values(existingEntries).map(entry => {
-              return `${entry.id};${entry.title};${entry.categories};${entry.description};${entry.creation_date};${entry.upload_date};${entry.report_year};${entry.report_quarter};${entry.image_url};${entry.pdf_url}`;
-            }).join('\n') + '\n';
-
-            // Write the CSV data back to the file
+            // Write the CSV data to the file
             fs.writeFileSync(csvFilePath, csvData);
-
-            // Log corrupt PDF files to console
-            if (corruptFilesLog.length > 0) {
-              console.log("The following PDF files encountered errors while processing:");
-              corruptFilesLog.forEach(corruptFile => {
-                console.log(corruptFile);
-              });
-            }
 
       - name: Commit changes
         env:
-          ACTIONS_PAT: ${{ secrets.ACTIONS_PAT }}  # Use ACTIONS_PAT for committing changes
+          ACTIONS_PAT: ${{ secrets.ACTIONS_PAT }}
         run: |
           git config --local user.email "actions@github.com"
           git config --local user.name "GitHub Actions Bot"
           git add csv_data.csv
-          git commit -m "csv_data.csv updated with new PDF metadata" || echo "No changes to commit"
+          git commit -m "csv_data.csv updated with PDF metadata" || echo "No changes to commit"
           git push "https://x-access-token:${{ secrets.ACTIONS_PAT }}@github.com/${{ github.repository }}.git"
